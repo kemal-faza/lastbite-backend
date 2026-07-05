@@ -1,0 +1,261 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Category {
+  meals
+  bakery
+  drinks
+}
+
+enum UserRole {
+  FOOD_SAVER
+  MITRA
+  ADMIN
+}
+
+model User {
+  id                         String    @id @default(uuid())
+  email                      String    @unique
+  name                       String
+  phone                      String?
+  role                       UserRole  @default(FOOD_SAVER)
+  passwordHash               String
+  isVerified                 Boolean   @default(false)
+  verificationCode           String?
+  verificationCodeExpiresAt  DateTime?
+  refreshToken               String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  products                   Product[]
+  cart                       Cart?
+  orders                     Order[]
+  mitraProfile               MitraProfile?
+  deviceTokens              DeviceToken[]
+  wishlistSubscriptions     WishlistSubscription[]
+  notifications             Notification[]
+  reviews                   Review[]
+
+  @@map("users")
+}
+
+model Product {
+  id              String    @id @default(uuid())
+  name            String
+  description     String?
+  category        Category
+  originalPrice   Int
+  discountedPrice Int
+  stock           Int       @default(0)
+  imageUrl        String?
+  storeName       String
+  storeAddress    String?
+  storeLat        Float?
+  storeLng        Float?
+  expiresAt       DateTime
+  mitraId         String?
+  mitra           User?     @relation(fields: [mitraId], references: [id])
+  cartItems       CartItem[]
+  reviews         Review[]
+  isActive        Boolean                           @default(true)
+  createdAt       DateTime                          @default(now())
+  updatedAt       DateTime                          @updatedAt
+  searchVector    Unsupported("tsvector")?
+
+  @@index([category])
+  @@index([mitraId])
+  @@index([isActive])
+  @@map("products")
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String     @unique
+  storeName String?
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int      @default(1)
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSED
+  READY
+  PICKED_UP
+  CANCELLED
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  userId          String
+  storeName       String
+  status          OrderStatus @default(PENDING)
+  pickupCode      String      @unique
+  pickupExpiresAt DateTime
+  totalAmount     Int
+  savingAmount    Int
+  buyerName       String
+  buyerPhone      String
+  notes           String?
+  items           OrderItem[]
+  review          Review?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([pickupCode])
+  @@map("orders")
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  orderId   String   @unique
+  userId    String
+  productId String
+  rating    Int      // 1-5
+  comment   String?
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([productId, createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("reviews")
+}
+
+model OrderItem {
+  id            String   @id @default(uuid())
+  orderId       String
+  productId     String
+  name          String
+  storeName     String
+  price         Int
+  originalPrice Int
+  quantity      Int
+  imageUrl      String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model MitraProfile {
+  id                 String             @id @default(uuid())
+  userId             String             @unique
+  storeName          String
+  storeDescription   String?
+  storeAddress       String?
+  storeLat           Float?
+  storeLng           Float?
+  verificationStatus VerificationStatus @default(PENDING)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mitra_profiles")
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String
+  platform  String   @default("web")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, token])
+  @@index([userId])
+  @@map("device_tokens")
+}
+
+model WishlistSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([productId])
+  @@map("wishlist_subscriptions")
+}
+
+model PlatformConfig {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String
+
+  @@map("platform_config")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entity])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  type      String   @default("general")
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notifications")
+}
