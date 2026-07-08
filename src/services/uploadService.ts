@@ -1,9 +1,38 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import { config } from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Generate 3 variants (thumb/card/full) of an image buffer using sharp.
+ * Returns JPEG buffers at configured widths with quality 80.
+ * Does not enlarge images smaller than variant width.
+ */
+export async function generateVariants(
+  buffer: Buffer
+): Promise<{ thumb: Buffer; card: Buffer; full: Buffer }> {
+  const { thumb, card, full, quality } = config.upload.imageVariants;
+
+  const [thumbBuf, cardBuf, fullBuf] = await Promise.all([
+    sharp(buffer)
+      .resize(thumb, null, { withoutEnlargement: true })
+      .jpeg({ quality })
+      .toBuffer(),
+    sharp(buffer)
+      .resize(card, null, { withoutEnlargement: true })
+      .jpeg({ quality })
+      .toBuffer(),
+    sharp(buffer)
+      .resize(full, null, { withoutEnlargement: true })
+      .jpeg({ quality })
+      .toBuffer(),
+  ]);
+
+  return { thumb: thumbBuf, card: cardBuf, full: fullBuf };
+}
 
 export class UploadError extends Error {
   constructor(message: string) {
