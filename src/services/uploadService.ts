@@ -95,22 +95,52 @@ async function uploadToS3(file: Express.Multer.File): Promise<UploadResult> {
     ...(s3Config.endpoint ? { endpoint: s3Config.endpoint, forcePathStyle: true } : {}),
   });
 
-  const ext = path.extname(file.originalname);
-  const key = `products/${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
+  // Generate variants first
+  const variants = await generateVariants(file.buffer);
 
-  await client.send(new PutObjectCommand({
-    Bucket: s3Config.bucket,
-    Key: key,
-    Body: file.buffer,
-    ContentType: file.mimetype,
-    ACL: 'public-read',
-  }));
+  const baseKey = `products/${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-  const url = s3Config.publicUrl
-    ? `${s3Config.publicUrl}/${key}`
-    : `https://${s3Config.bucket}.s3.${s3Config.region}.amazonaws.com/${key}`;
+  // Upload all 3 variants in parallel
+  await Promise.all([
+    client.send(new PutObjectCommand({
+      Bucket: s3Config.bucket,
+      Key: `${baseKey}/thumb.jpg`,
+      Body: variants.thumb,
+      ContentType: 'image/jpeg',
+      ACL: 'public-read',
+      CacheControl: 'public, max-age=31536000, immutable',
+    })),
+    client.send(new PutObjectCommand({
+      Bucket: s3Config.bucket,
+      Key: `${baseKey}/card.jpg`,
+      Body: variants.card,
+      ContentType: 'image/jpeg',
+      ACL: 'public-read',
+      CacheControl: 'public, max-age=31536000, immutable',
+    })),
+    client.send(new PutObjectCommand({
+      Bucket: s3Config.bucket,
+      Key: `${baseKey}/full.jpg`,
+      Body: variants.full,
+      ContentType: 'image/jpeg',
+      ACL: 'public-read',
+      CacheControl: 'public, max-age=31536000, immutable',
+    })),
+  ]);
 
-  return { url, key };
+  const baseUrl = s3Config.publicUrl
+    ? s3Config.publicUrl
+    : `https://${s3Config.bucket}.s3.${s3Config.region}.amazonaws.com`;
+
+  return {
+    url: `${baseUrl}/${baseKey}/full.jpg`,
+    key: baseKey,
+    variants: {
+      thumb: `${baseUrl}/${baseKey}/thumb.jpg`,
+      card: `${baseUrl}/${baseKey}/card.jpg`,
+      full: `${baseUrl}/${baseKey}/full.jpg`,
+    },
+  };
 }
 
 export async function uploadFile(file: Express.Multer.File): Promise<UploadResult> {
