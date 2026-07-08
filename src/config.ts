@@ -17,6 +17,12 @@ export const config = {
     provider: (process.env.UPLOAD_PROVIDER || 'local') as 'local' | 's3',
     localDir: process.env.UPLOAD_LOCAL_DIR || 'uploads',
     maxFileSize: parseInt(process.env.UPLOAD_MAX_SIZE || '5242880', 10),
+    imageVariants: {
+      thumb: parseInt(process.env.UPLOAD_VARIANT_THUMB_SIZE || '200', 10),
+      card: parseInt(process.env.UPLOAD_VARIANT_CARD_SIZE || '400', 10),
+      full: parseInt(process.env.UPLOAD_VARIANT_FULL_SIZE || '800', 10),
+      quality: parseInt(process.env.UPLOAD_VARIANT_QUALITY || '80', 10),
+    },
     s3: {
       region: process.env.S3_REGION || 'ap-southeast-1',
       bucket: process.env.S3_BUCKET || 'lastbite-uploads',
