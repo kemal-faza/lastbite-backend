@@ -2,6 +2,7 @@ import { Prisma, Category } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import type { ProductResponse, ProductListResponse, ProductSearchResponse } from '../types/index.js';
 import { filterByProximity } from './locationService.js';
+import { deriveImageVariants } from './imageVariants.js';
 
 export class ProductNotFoundError extends Error {
   constructor() {
@@ -58,6 +59,7 @@ function toProductResponse(
     discountPercent,
     stock: product.stock,
     imageUrl: product.imageUrl,
+    imageVariants: deriveImageVariants(product.imageUrl),
     storeName: product.storeName,
     storeAddress: product.storeAddress,
     storeLat: product.storeLat,
