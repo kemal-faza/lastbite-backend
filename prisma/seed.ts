@@ -227,10 +227,34 @@ async function seedAdminUser(): Promise<void> {
   console.log(`Created ADMIN user: ${ADMIN_EMAIL} (password: admin123)`);
 }
 
+const FOOD_SAVER_EMAIL = "foodsaver@lastbite.id";
+
+async function seedFoodSaverUser(): Promise<void> {
+  const existing = await prisma.user.findUnique({ where: { email: FOOD_SAVER_EMAIL } });
+  if (existing) {
+    console.log(`FOOD_SAVER user already exists: ${FOOD_SAVER_EMAIL}`);
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash("foodsaver123", SALT_ROUNDS);
+  await prisma.user.create({
+    data: {
+      email: FOOD_SAVER_EMAIL,
+      name: "Food Saver Test",
+      phone: "081111111111",
+      role: "FOOD_SAVER",
+      passwordHash,
+      isVerified: true,
+    },
+  });
+  console.log(`Created FOOD_SAVER user: ${FOOD_SAVER_EMAIL} (password: foodsaver123)`);
+}
+
 async function main() {
   console.log("Seeding database...");
 
   await seedAdminUser();
+  await seedFoodSaverUser();
   const mitras = await ensureMitraUsers();
   await seedProducts(mitras);
 
