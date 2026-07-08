@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import type { ProductResponse } from '../types/index.js';
 import { deriveImageVariants } from './imageVariants.js';
+import { deleteFromSpaces, extractKeyFromUrl } from './uploadService.js';
 
 export class MitraProductError extends Error {
   constructor(message: string, public code: string) {
@@ -72,6 +73,8 @@ export async function updateMitraProduct(
     throw new MitraProductError('Produk tidak ditemukan atau bukan milik Anda', 'PRODUCT_NOT_FOUND');
   }
 
+  const oldImageUrl = product.imageUrl;
+
   const updated = await prisma.product.update({
     where: { id: productId },
     data: {
@@ -94,12 +97,21 @@ export async function updateMitraProduct(
     await notifyStockReplenished(updated);
   }
 
+  // If imageUrl changed, delete old image variants from DO Spaces (fire-and-forget)
+  if (input.imageUrl !== undefined && oldImageUrl && oldImageUrl !== input.imageUrl) {
+    const oldKey = extractKeyFromUrl(oldImageUrl);
+    if (oldKey) {
+      deleteFromSpaces(oldKey);
+    }
+  }
+
   return toProductResponse(updated);
 }
 
 export async function deleteMitraProduct(mitraId: string, productId: string): Promise<void> {
   const product = await prisma.product.findFirst({
     where: { id: productId, mitraId },
+    select: { id: true, imageUrl: true },
   });
 
   if (!product) {
@@ -110,6 +122,12 @@ export async function deleteMitraProduct(mitraId: string, productId: string): Pr
     where: { id: productId },
     data: { isActive: false },
   });
+
+  // Delete image variants from DO Spaces (fire-and-forget)
+  const oldKey = extractKeyFromUrl(product.imageUrl);
+  if (oldKey) {
+    deleteFromSpaces(oldKey);
+  }
 }
 
 async function notifyStockReplenished(product: { id: string; name: string }) {

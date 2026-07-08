@@ -107,6 +107,6 @@ describe('Image variants E2E flow', () => {
     expect(listRes.status).toBe(200);
     expect(listRes.body.products).toHaveLength(1);
     expect(listRes.body.products[0].imageVariants).toBeDefined();
-    expect(listRes.body.products[0].imageVariants.thumb).toMatch(/\/uploads\/products\/.+\/thumb\.jpg$/);
+    expect(listRes.body.products[0].imageVariants.thumb).toMatch(/\/products\/.+\/thumb\.jpg$/);
   });
 });

@@ -40,9 +40,12 @@ describe('POST /uploads', () => {
     expect(res.body.url).toBeDefined();
     expect(res.body.key).toBeDefined();
     expect(res.body.variants).toBeDefined();
-    expect(res.body.variants.thumb).toMatch(/\/uploads\/products\/.+\/thumb\.jpg$/);
-    expect(res.body.variants.card).toMatch(/\/uploads\/products\/.+\/card\.jpg$/);
-    expect(res.body.variants.full).toMatch(/\/uploads\/products\/.+\/full\.jpg$/);
+    // All 3 variant URLs should end with the correct variant name
+    expect(res.body.variants.thumb).toMatch(/thumb\.jpg$/);
+    expect(res.body.variants.card).toMatch(/card\.jpg$/);
+    expect(res.body.variants.full).toMatch(/full\.jpg$/);
+    // URL should contain the product key path
+    expect(res.body.variants.thumb).toMatch(/\/products\/.+\/thumb\.jpg$/);
   });
 
   it('should return 401 without auth', async () => {

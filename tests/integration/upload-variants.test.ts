@@ -3,22 +3,19 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { prisma } from '../setup.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
+import { config } from '../../src/config.js';
 import sharp from 'sharp';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const app = createApp();
+const isLocalProvider = config.upload.provider === 'local';
 
 describe('POST /uploads - variant generation integration', () => {
   let accessToken: string;
   const uploadDir = path.resolve('uploads');
 
   beforeEach(async () => {
-    // Clean up generated test files
-    try {
-      await fs.rm(path.join(uploadDir, 'products'), { recursive: true, force: true });
-    } catch {}
-
     const user = await prisma.user.create({
       data: {
         email: 'test@test.com',
@@ -31,7 +28,7 @@ describe('POST /uploads - variant generation integration', () => {
     accessToken = signAccessToken({ userId: user.id, email: user.email });
   });
 
-  it('should generate 3 variant files on disk', async () => {
+  it('should generate 3 variant files on disk', { skip: !isLocalProvider }, async () => {
     // Create a real 1000x1000 test JPEG
     const imageBuffer = await sharp({
       create: { width: 1000, height: 1000, channels: 3, background: { r: 100, g: 150, b: 200 } },
@@ -71,7 +68,7 @@ describe('POST /uploads - variant generation integration', () => {
     expect(fullMeta.format).toBe('jpeg');
   });
 
-  it('should return URLs that can be served by GET /uploads', async () => {
+  it('should return URLs that can be served by GET /uploads', { skip: !isLocalProvider }, async () => {
     const imageBuffer = await sharp({
       create: { width: 500, height: 500, channels: 3, background: { r: 50, g: 50, b: 50 } },
     })

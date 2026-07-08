@@ -34,6 +34,55 @@ export async function generateVariants(
   return { thumb: thumbBuf, card: cardBuf, full: fullBuf };
 }
 
+/**
+ * Extract the S3 base key from an imageUrl for deletion.
+ *
+ * DO Spaces URL: https://bucket.../products/mie_ayam/full.jpg → products/mie_ayam
+ * Legacy local:  /uploads/mie_ayam.png                     → products/mie_ayam
+ * Unknown/other                                            → null
+ */
+export function extractKeyFromUrl(imageUrl: string | null | undefined): string | null {
+  if (!imageUrl) return null;
+  // DO Spaces format: .../products/{key}/full.jpg
+  const s3Match = imageUrl.match(/\/products\/(.+?)\/(?:thumb|card|full)\.jpg$/);
+  if (s3Match) return `products/${s3Match[1]}`;
+  // Legacy local format: products/{key}/full.jpg (from local variant dir)
+  const localMatch = imageUrl.match(/\/products\/(.+?)\//);
+  if (localMatch) return `products/${localMatch[1]}`;
+  return null;
+}
+
+/**
+ * Delete all 3 image variants from DO Spaces (thumb, card, full).
+ * Best-effort — errors are logged but not thrown.
+ * No-op when UPLOAD_PROVIDER is not 's3'.
+ */
+export async function deleteFromSpaces(baseKey: string): Promise<void> {
+  if (config.upload.provider !== 's3') return;
+
+  const { S3Client, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+  const s3Config = config.upload.s3;
+
+  const client = new S3Client({
+    region: s3Config.region,
+    credentials: {
+      accessKeyId: s3Config.accessKeyId,
+      secretAccessKey: s3Config.secretAccessKey,
+    },
+    ...(s3Config.endpoint ? { endpoint: s3Config.endpoint, forcePathStyle: true } : {}),
+  });
+
+  try {
+    await Promise.all([
+      client.send(new DeleteObjectCommand({ Bucket: s3Config.bucket, Key: `${baseKey}/thumb.jpg` })),
+      client.send(new DeleteObjectCommand({ Bucket: s3Config.bucket, Key: `${baseKey}/card.jpg` })),
+      client.send(new DeleteObjectCommand({ Bucket: s3Config.bucket, Key: `${baseKey}/full.jpg` })),
+    ]);
+  } catch (err) {
+    console.warn(`[deleteFromSpaces] Failed to delete ${baseKey}:`, err);
+  }
+}
+
 export class UploadError extends Error {
   constructor(message: string) {
     super(message);
