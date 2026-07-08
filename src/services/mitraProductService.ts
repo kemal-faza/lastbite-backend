@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import type { ProductResponse } from '../types/index.js';
+import { deriveImageVariants } from './imageVariants.js';
 
 export class MitraProductError extends Error {
   constructor(message: string, public code: string) {
@@ -26,6 +27,7 @@ function toProductResponse(product: any): ProductResponse {
     discountPercent,
     stock: product.stock,
     imageUrl: product.imageUrl,
+    imageVariants: deriveImageVariants(product.imageUrl),
     storeName: product.storeName,
     storeAddress: product.storeAddress,
     storeLat: product.storeLat,
