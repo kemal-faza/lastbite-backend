@@ -33,6 +33,14 @@ export const updateMitraProductSchema = z.object({
   discountedPrice: z.number().int().positive().optional(),
   stock: z.number().int().min(0).optional(),
   imageUrl: z.string().url().optional().nullable(),
+  imageVariants: z
+    .object({
+      thumb: z.string(),
+      card: z.string(),
+      full: z.string(),
+    })
+    .optional()
+    .nullable(),
   storeName: z.string().min(1).max(200).optional(),
   storeAddress: z.string().max(500).optional().nullable(),
   expiresAt: z.string().datetime().optional(),

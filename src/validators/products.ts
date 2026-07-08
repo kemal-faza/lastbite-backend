@@ -29,6 +29,14 @@ export const createProductSchema = z.object({
   discountedPrice: z.number().int().positive('Harga diskon harus positif'),
   stock: z.number().int().min(0, 'Stok minimal 0'),
   imageUrl: z.string().url('URL gambar tidak valid').optional().nullable(),
+  imageVariants: z
+    .object({
+      thumb: z.string(),
+      card: z.string(),
+      full: z.string(),
+    })
+    .optional()
+    .nullable(),
   storeName: z.string().min(1, 'Nama toko wajib diisi').max(200),
   storeAddress: z.string().max(500).optional().nullable(),
   storeLat: z.number().optional().nullable(),
