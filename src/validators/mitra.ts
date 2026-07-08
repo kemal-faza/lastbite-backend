@@ -32,7 +32,7 @@ export const updateMitraProductSchema = z.object({
   originalPrice: z.number().int().positive().optional(),
   discountedPrice: z.number().int().positive().optional(),
   stock: z.number().int().min(0).optional(),
-  imageUrl: z.string().url().optional().nullable(),
+  imageUrl: z.string().min(1).optional().nullable(),
   imageVariants: z
     .object({
       thumb: z.string(),

@@ -28,7 +28,7 @@ export const createProductSchema = z.object({
   originalPrice: z.number().int().positive('Harga asli harus positif'),
   discountedPrice: z.number().int().positive('Harga diskon harus positif'),
   stock: z.number().int().min(0, 'Stok minimal 0'),
-  imageUrl: z.string().url('URL gambar tidak valid').optional().nullable(),
+  imageUrl: z.string().min(1, 'URL gambar tidak valid').optional().nullable(),
   imageVariants: z
     .object({
       thumb: z.string(),
