@@ -1,6 +1,9 @@
 import { prisma } from '../lib/prisma.js';
 import { getCart } from './cartService.js';
 import { sendNotificationPush } from './notificationService.js';
+import { deriveImageVariants } from './imageVariants.js';
+
+type ImageVariantsObj = { thumb: string; card: string; full: string } | null;
 
 export class OrderError extends Error {
   constructor(message: string, public code: string) {
@@ -39,6 +42,17 @@ async function ensureUniquePickupCode(): Promise<string> {
     if (!existing) return code;
   }
   throw new OrderError('Gagal membuat kode pickup, silakan coba lagi', 'PICKUP_CODE_ERROR');
+}
+
+function addImageVariantsToOrder(order: any) {
+  if (!order?.items) return order;
+  return {
+    ...order,
+    items: order.items.map((item: any) => ({
+      ...item,
+      imageVariants: deriveImageVariants(item.imageUrl),
+    })),
+  };
 }
 
 export async function createOrder(userId: string, input: CreateOrderInput) {
@@ -145,15 +159,16 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     { orderId: order.id, pickupCode: order.pickupCode, type: 'order_status' }
   );
 
-  return order;
+  return addImageVariantsToOrder(order);
 }
 
 export async function getUserOrders(userId: string) {
-  return prisma.order.findMany({
+  const orders = await prisma.order.findMany({
     where: { userId },
     include: { items: true },
     orderBy: { createdAt: 'desc' },
   });
+  return orders.map(addImageVariantsToOrder);
 }
 
 export async function getOrderById(userId: string, orderId: string) {
@@ -166,7 +181,7 @@ export async function getOrderById(userId: string, orderId: string) {
     throw new OrderError('Pesanan tidak ditemukan', 'ORDER_NOT_FOUND');
   }
 
-  return order;
+  return addImageVariantsToOrder(order);
 }
 
 export async function verifyPickup(
@@ -208,5 +223,5 @@ export async function verifyPickup(
     include: { items: true },
   });
 
-  return updatedOrder;
+  return addImageVariantsToOrder(updatedOrder);
 }

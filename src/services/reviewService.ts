@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import type { CreateReviewInput } from '../validators/reviews.js';
+import { deriveImageVariants } from './imageVariants.js';
 
 export class ReviewError extends Error {
   constructor(message: string, public code: string) {
@@ -59,7 +60,7 @@ export async function createReview(
     },
   });
 
-  return review;
+  return { ...review, imageVariants: deriveImageVariants(review.imageUrl) };
 }
 
 export interface ReviewListOptions {
@@ -103,7 +104,7 @@ export async function getProductReviews(productId: string, opts: ReviewListOptio
   }
 
   return {
-    reviews,
+    reviews: reviews.map((r) => ({ ...r, imageVariants: deriveImageVariants(r.imageUrl) })),
     avgRating: aggregation._avg.rating ? Math.round(aggregation._avg.rating * 10) / 10 : null,
     totalReviews: total,
     ratingDistribution,
@@ -151,7 +152,7 @@ export async function getMitraReviews(mitraUserId: string, opts: ReviewListOptio
   ]);
 
   return {
-    reviews,
+    reviews: reviews.map((r) => ({ ...r, imageVariants: deriveImageVariants(r.imageUrl) })),
     avgRating: aggregation._avg.rating ? Math.round(aggregation._avg.rating * 10) / 10 : null,
     totalReviews: total,
     ratingDistribution: {},

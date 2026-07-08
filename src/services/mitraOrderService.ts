@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import type { OrderStatus } from '@prisma/client';
 import { createNotification, sendNotificationPush } from './notificationService.js';
+import { deriveImageVariants } from './imageVariants.js';
 
 export class MitraOrderError extends Error {
   constructor(message: string, public code: string) {
@@ -15,6 +16,7 @@ interface MitraOrderItem {
   price: number;
   quantity: number;
   imageUrl: string | null;
+  imageVariants: { thumb: string; card: string; full: string } | null;
 }
 
 interface MitraOrder {
@@ -52,6 +54,7 @@ function toOrderResponse(order: any): MitraOrder {
       price: item.price,
       quantity: item.quantity,
       imageUrl: item.imageUrl,
+      imageVariants: deriveImageVariants(item.imageUrl),
     })),
     createdAt: toISO(order.createdAt),
   };

@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma.js';
+import { deriveImageVariants } from './imageVariants.js';
 
 export class CartError extends Error {
   constructor(message: string, public code: string) {
@@ -46,10 +47,24 @@ export interface CartWithItems {
       originalPrice: number;
       stock: number;
       imageUrl: string | null;
+      imageVariants: { thumb: string; card: string; full: string } | null;
       storeName: string;
       isActive: boolean;
     };
   }[];
+}
+
+function addImageVariants(cart: CartWithItems): CartWithItems {
+  return {
+    ...cart,
+    items: cart.items.map((item) => ({
+      ...item,
+      product: {
+        ...item.product,
+        imageVariants: deriveImageVariants(item.product.imageUrl),
+      },
+    })),
+  };
 }
 
 async function getCartOrCreate(userId: string) {
@@ -77,7 +92,7 @@ async function getCartOrCreate(userId: string) {
     });
   }
 
-  return cart as CartWithItems;
+  return addImageVariants(cart as unknown as CartWithItems);
 }
 
 export async function getCart(userId: string): Promise<CartWithItems> {
@@ -160,7 +175,7 @@ export async function addToCart(
       },
     });
 
-    return updatedCart as CartWithItems;
+    return addImageVariants(updatedCart as unknown as CartWithItems);
   });
 }
 
@@ -239,7 +254,7 @@ export async function updateCartItemQuantity(
       },
     });
 
-    return updatedCart as CartWithItems;
+    return addImageVariants(updatedCart as unknown as CartWithItems);
   });
 }
 
