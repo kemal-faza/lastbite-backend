@@ -23,6 +23,12 @@ export interface ApiError {
   code: string;
 }
 
+export interface ImageVariants {
+  thumb: string;
+  card: string;
+  full: string;
+}
+
 export interface ProductResponse {
   id: string;
   name: string;
@@ -34,6 +40,8 @@ export interface ProductResponse {
   discountPercent: number;
   stock: number;
   imageUrl: string | null;
+  /** Pre-generated variants derived from imageUrl. May be null for legacy data. */
+  imageVariants: ImageVariants | null;
   storeName: string;
   storeAddress: string | null;
   storeLat: number | null;
