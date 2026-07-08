@@ -16,7 +16,7 @@ uploadsRouter.post(
         return;
       }
       const result = await uploadFile(req.file);
-      res.status(201).json({ url: result.url, key: result.key });
+      res.status(201).json({ url: result.url, key: result.key, variants: result.variants });
     } catch (err) {
       if (err instanceof UploadError) {
         res.status(400).json({ error: err.message, code: 'UPLOAD_ERROR' });

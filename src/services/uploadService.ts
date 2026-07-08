@@ -44,19 +44,41 @@ export class UploadError extends Error {
 export interface UploadResult {
   url: string;
   key: string;
+  variants: {
+    thumb: string;
+    card: string;
+    full: string;
+  };
 }
 
 async function uploadToLocal(file: Express.Multer.File): Promise<UploadResult> {
   const uploadDir = path.resolve(config.upload.localDir);
   await fs.mkdir(uploadDir, { recursive: true });
 
-  const ext = path.extname(file.originalname);
-  const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
-  const destPath = path.join(uploadDir, filename);
+  const ext = '.jpg'; // Always save as JPEG after processing
+  const baseName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const productDir = path.join(uploadDir, 'products', baseName);
+  await fs.mkdir(productDir, { recursive: true });
 
-  await fs.writeFile(destPath, file.buffer);
+  // Generate variants from the original buffer
+  const variants = await generateVariants(file.buffer);
 
-  return { url: `/uploads/${filename}`, key: filename };
+  // Write all 3 variants in parallel
+  await Promise.all([
+    fs.writeFile(path.join(productDir, `thumb${ext}`), variants.thumb),
+    fs.writeFile(path.join(productDir, `card${ext}`), variants.card),
+    fs.writeFile(path.join(productDir, `full${ext}`), variants.full),
+  ]);
+
+  return {
+    url: `/uploads/products/${baseName}/full${ext}`,
+    key: `products/${baseName}`,
+    variants: {
+      thumb: `/uploads/products/${baseName}/thumb${ext}`,
+      card: `/uploads/products/${baseName}/card${ext}`,
+      full: `/uploads/products/${baseName}/full${ext}`,
+    },
+  };
 }
 
 async function uploadToS3(file: Express.Multer.File): Promise<UploadResult> {
