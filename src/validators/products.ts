@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const productQuerySchema = z.object({
   category: z.enum(['meals', 'bakery', 'drinks']).optional(),
-  sort: z.enum(['price_asc', 'price_desc', 'newest', 'oldest', 'distance_asc']).optional(),
+  sort: z.enum(['price_asc', 'price_desc', 'newest', 'oldest', 'distance_asc', 'stock_asc']).optional(),
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(50).default(20),
   lat: z.coerce.number().min(-90).max(90).optional(),

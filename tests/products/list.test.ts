@@ -97,6 +97,15 @@ describe('GET /products', () => {
     }
   });
 
+  it('should sort by stock ascending (Segera Habis first)', async () => {
+    const res = await request(app).get('/products?sort=stock_asc');
+    expect(res.status).toBe(200);
+    const stocks = res.body.products.map((p: { stock: number }) => p.stock);
+    for (let i = 1; i < stocks.length; i++) {
+      expect(stocks[i]).toBeGreaterThanOrEqual(stocks[i - 1]);
+    }
+  });
+
   it('should paginate with limit and page', async () => {
     const res = await request(app).get('/products?limit=2&page=1');
     expect(res.status).toBe(200);
