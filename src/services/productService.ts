@@ -64,7 +64,7 @@ function toProductResponse(
     storeAddress: product.storeAddress,
     storeLat: product.storeLat,
     storeLng: product.storeLng,
-    distanceKm,
+    distanceKm: (distanceKm !== undefined ? distanceKm : undefined) as number | undefined,
     expiresAt: toISO(product.expiresAt),
     isActive: product.isActive,
     createdAt: toISO(product.createdAt),
