@@ -19,6 +19,8 @@ export interface ProductListOptions {
   lat?: number;
   lng?: number;
   radius?: number;
+  maxPrice?: number;
+  expiry?: 'Hari Ini' | '< 1 Jam' | '< 3 Jam' | '< 6 Jam';
 }
 
 function toISO(value: Date | string): string {
@@ -73,11 +75,34 @@ function toProductResponse(
 }
 
 export async function findAll(options: ProductListOptions = {}): Promise<ProductListResponse> {
-  const { category, sort = 'newest', page = 1, limit = 20, lat, lng, radius } = options;
+  const { category, sort = 'newest', page = 1, limit = 20, lat, lng, radius, maxPrice, expiry } = options;
 
   const where: Prisma.ProductWhereInput = { isActive: true };
   if (category) {
     where.category = category as Prisma.EnumCategoryFilter['equals'];
+  }
+  if (maxPrice !== undefined) {
+    where.discountedPrice = { lte: maxPrice };
+  }
+  if (expiry) {
+    const now = new Date();
+    switch (expiry) {
+      case 'Hari Ini': {
+        const endOfDay = new Date(now);
+        endOfDay.setHours(23, 59, 59, 999);
+        where.expiresAt = { lte: endOfDay };
+        break;
+      }
+      case '< 1 Jam':
+        where.expiresAt = { lte: new Date(now.getTime() + 60 * 60 * 1000) };
+        break;
+      case '< 3 Jam':
+        where.expiresAt = { lte: new Date(now.getTime() + 3 * 60 * 60 * 1000) };
+        break;
+      case '< 6 Jam':
+        where.expiresAt = { lte: new Date(now.getTime() + 6 * 60 * 60 * 1000) };
+        break;
+    }
   }
 
   // Proximity flow: fetch ALL products, compute distances, filter, sort, paginate in-memory

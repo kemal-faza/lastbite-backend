@@ -29,7 +29,7 @@ export async function getConfig(): Promise<PlatformConfig> {
   if (!row) {
     return { ...defaultConfig };
   }
-  return row.value as PlatformConfig;
+  return row.value as unknown as PlatformConfig;
 }
 
 export async function updateConfig(

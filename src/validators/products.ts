@@ -8,6 +8,8 @@ export const productQuerySchema = z.object({
   lat: z.coerce.number().min(-90).max(90).optional(),
   lng: z.coerce.number().min(-180).max(180).optional(),
   radius: z.coerce.number().positive().max(500).optional(),
+  maxPrice: z.coerce.number().int().positive().max(10000000).optional(),
+  expiry: z.enum(['Hari Ini', '< 1 Jam', '< 3 Jam', '< 6 Jam']).optional(),
 }).refine(
   (data) => {
     if (data.radius !== undefined && (data.lat === undefined || data.lng === undefined)) {

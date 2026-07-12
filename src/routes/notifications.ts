@@ -15,7 +15,11 @@ notificationsRouter.use(requireAuth);
 notificationsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const queryParsed = getNotificationsQuerySchema.safeParse(req.query);
-    const options = queryParsed.success ? queryParsed.data : {};
+    if (!queryParsed.success) {
+      res.status(400).json({ error: 'Parameter tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
+    const options = queryParsed.data;
     const result = await getNotifications(req.user!.userId, {
       unreadOnly: options.unread,
       limit: options.limit,

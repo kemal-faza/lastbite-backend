@@ -38,7 +38,7 @@ wishlistSubscriptionsRouter.post('/', async (req: Request, res: Response, next: 
 wishlistSubscriptionsRouter.delete('/:productId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await prisma.wishlistSubscription.deleteMany({
-      where: { userId: req.user!.userId, productId: req.params.productId },
+      where: { userId: req.user!.userId, productId: String(req.params.productId) },
     });
     res.status(204).end();
   } catch (err) {
