@@ -8,7 +8,6 @@ import {
   removeFromCart,
   clearCart,
   CartError,
-  DifferentStoreError,
   InsufficientStockError,
   ProductNotFoundError,
 } from '../services/cartService.js';
@@ -44,7 +43,7 @@ cartRouter.post('/', async (req: Request, res: Response, next: NextFunction) => 
     const cart = await addToCart(req.user!.userId, parsed.data.productId, parsed.data.quantity);
     res.json({ cart });
   } catch (err) {
-    if (err instanceof DifferentStoreError || err instanceof InsufficientStockError) {
+    if (err instanceof InsufficientStockError) {
       res.status(409).json({ error: err.message, code: err.code });
       return;
     }

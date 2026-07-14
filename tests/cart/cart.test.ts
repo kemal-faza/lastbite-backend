@@ -87,7 +87,7 @@ describe('Cart API', () => {
       expect(res.body.cart.items).toHaveLength(1);
       expect(res.body.cart.items[0].productId).toBe(productId);
       expect(res.body.cart.items[0].quantity).toBe(2);
-      expect(res.body.cart.storeName).toBe('Warung Test');
+      expect(res.body.cart.storeName).toBeNull();
     });
 
     it('should increase quantity when adding same product', async () => {
@@ -118,21 +118,21 @@ describe('Cart API', () => {
       expect(res.body.code).toBe('INSUFFICIENT_STOCK');
     });
 
-    it('should return 409 when adding product from different store', async () => {
+    it('should allow adding products from different stores', async () => {
       // First add from Warung Test
       await request(app)
         .post('/cart')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ productId, quantity: 1 });
 
-      // Try adding from Warung Lain
+      // Add from Warung Lain — multi-store is now allowed
       const res = await request(app)
         .post('/cart')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ productId: secondProductId, quantity: 1 });
 
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('DIFFERENT_STORE');
+      expect(res.status).toBe(200);
+      expect(res.body.cart.items).toHaveLength(2);
     });
 
     it('should return 404 when product does not exist', async () => {

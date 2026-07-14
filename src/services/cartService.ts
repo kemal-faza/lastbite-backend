@@ -15,16 +15,6 @@ export class ProductNotFoundError extends CartError {
   }
 }
 
-export class DifferentStoreError extends CartError {
-  constructor(existingStore: string, newStore: string) {
-    super(
-      `Keranjang hanya bisa berisi produk dari satu toko. Saat ini dari "${existingStore}".`,
-      'DIFFERENT_STORE'
-    );
-    this.name = 'DifferentStoreError';
-  }
-}
-
 export class InsufficientStockError extends CartError {
   constructor(productName: string, available: number) {
     super(`Stok "${productName}" tidak mencukupi. Tersedia: ${available}.`, 'INSUFFICIENT_STOCK');
@@ -122,11 +112,6 @@ export async function addToCart(
       });
     }
 
-    // Single-store constraint
-    if (cart.storeName && product.storeName !== cart.storeName) {
-      throw new DifferentStoreError(cart.storeName, product.storeName);
-    }
-
     // Stock check
     const existingItem = cart.items.find((i) => i.productId === productId);
     const currentQty = existingItem ? existingItem.quantity : 0;
@@ -144,13 +129,6 @@ export async function addToCart(
       create: { cartId: cart.id, productId, quantity },
       update: { quantity: newQty },
     });
-
-    if (!cart.storeName) {
-      await tx.cart.update({
-        where: { id: cart.id },
-        data: { storeName: product.storeName },
-      });
-    }
 
     // Return fresh cart with items
     const updatedCart = await tx.cart.findUnique({

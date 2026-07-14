@@ -24,6 +24,7 @@ export interface CreateOrderInput {
   buyerName: string;
   buyerPhone: string;
   notes?: string;
+  storeName?: string;
 }
 
 function generatePickupCode(): string {
@@ -62,9 +63,30 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     throw new OrderError('Keranjang kosong', 'CART_EMPTY');
   }
 
+  const { storeName } = input;
+
+  // Filter items by store if specified (multi-store support)
+  let checkoutItems = cart.items;
+  let orderStoreName: string;
+
+  if (storeName) {
+    checkoutItems = cart.items.filter((item) => item.product.storeName === storeName);
+    orderStoreName = storeName;
+    if (checkoutItems.length === 0) {
+      throw new OrderError(
+        `Tidak ada produk dari "${storeName}" di keranjang`,
+        'CART_EMPTY'
+      );
+    }
+  } else {
+    // Derive order store name from items when checking out entire cart
+    const uniqueStores = [...new Set(cart.items.map((i) => i.product.storeName))];
+    orderStoreName = uniqueStores.length === 1 ? uniqueStores[0] : '';
+  }
+
   const order = await prisma.$transaction(async (tx) => {
     // Verify stock for all items
-    for (const item of cart.items) {
+    for (const item of checkoutItems) {
       const product = await tx.product.findUnique({ where: { id: item.productId } });
       if (!product || !product.isActive) {
         throw new OrderError(
@@ -83,7 +105,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     // Calculate totals
     let totalAmount = 0;
     let savingAmount = 0;
-    for (const item of cart.items) {
+    for (const item of checkoutItems) {
       totalAmount += item.product.discountedPrice * item.quantity;
       savingAmount += (item.product.originalPrice - item.product.discountedPrice) * item.quantity;
     }
@@ -96,7 +118,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     const created = await tx.order.create({
       data: {
         userId,
-        storeName: cart.storeName!,
+        storeName: orderStoreName,
         status: 'PENDING',
         pickupCode,
         pickupExpiresAt,
@@ -106,7 +128,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
         buyerPhone: input.buyerPhone,
         notes: input.notes || null,
         items: {
-          create: cart.items.map((item) => ({
+          create: checkoutItems.map((item) => ({
             productId: item.productId,
             name: item.product.name,
             storeName: item.product.storeName,
@@ -121,28 +143,38 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     });
 
     // Decrement stock for all items
-    for (const item of cart.items) {
+    for (const item of checkoutItems) {
       await tx.product.update({
         where: { id: item.productId },
         data: { stock: { decrement: item.quantity } },
       });
     }
 
-    // Clear cart items and storeName
+    // Remove only the checked-out items, keep items from other stores
     await tx.cartItem.deleteMany({
+      where: {
+        cartId: cart.id,
+        productId: { in: checkoutItems.map((i) => i.productId) },
+      },
+    });
+
+    // Check if cart is now empty and clear storeName
+    const remainingItems = await tx.cartItem.count({
       where: { cartId: cart.id },
     });
-    await tx.cart.update({
-      where: { id: cart.id },
-      data: { storeName: null },
-    });
+    if (remainingItems === 0) {
+      await tx.cart.update({
+        where: { id: cart.id },
+        data: { storeName: null },
+      });
+    }
 
     // Create notification for the buyer
     await tx.notification.create({
       data: {
         userId,
         title: 'Pesanan Berhasil Dibuat',
-        body: `Pesanan kamu di ${cart.storeName} telah dibuat. Kode pickup: ${created.pickupCode}`,
+        body: `Pesanan kamu di ${orderStoreName} telah dibuat. Kode pickup: ${created.pickupCode}`,
         type: 'order_status',
         data: { orderId: created.id, pickupCode: created.pickupCode },
       },
