@@ -49,6 +49,7 @@ function addImageVariantsToOrder(order: any) {
   if (!order?.items) return order;
   return {
     ...order,
+    hasReviewed: !!order.review,
     items: order.items.map((item: any) => ({
       ...item,
       imageVariants: deriveImageVariants(item.imageUrl),
@@ -197,7 +198,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
 export async function getUserOrders(userId: string) {
   const orders = await prisma.order.findMany({
     where: { userId },
-    include: { items: true },
+    include: { items: true, review: true },
     orderBy: { createdAt: 'desc' },
   });
   return orders.map(addImageVariantsToOrder);
@@ -206,7 +207,7 @@ export async function getUserOrders(userId: string) {
 export async function getOrderById(userId: string, orderId: string) {
   const order = await prisma.order.findFirst({
     where: { id: orderId, userId },
-    include: { items: true },
+    include: { items: true, review: true },
   });
 
   if (!order) {
