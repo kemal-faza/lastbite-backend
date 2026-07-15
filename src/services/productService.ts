@@ -21,6 +21,7 @@ export interface ProductListOptions {
   radius?: number;
   maxPrice?: number;
   expiry?: 'Hari Ini' | '< 1 Jam' | '< 3 Jam' | '< 6 Jam';
+  ids?: string[];
 }
 
 function toISO(value: Date | string): string {
@@ -75,11 +76,14 @@ function toProductResponse(
 }
 
 export async function findAll(options: ProductListOptions = {}): Promise<ProductListResponse> {
-  const { category, sort = 'newest', page = 1, limit = 20, lat, lng, radius, maxPrice, expiry } = options;
+  const { category, sort = 'newest', page = 1, limit = 20, lat, lng, radius, maxPrice, expiry, ids } = options;
 
   const where: Prisma.ProductWhereInput = { isActive: true };
   if (category) {
     where.category = category as Prisma.EnumCategoryFilter['equals'];
+  }
+  if (ids && ids.length > 0) {
+    where.id = { in: ids };
   }
   if (maxPrice !== undefined) {
     where.discountedPrice = { lte: maxPrice };

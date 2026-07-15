@@ -15,7 +15,16 @@ productsRouter.get('/', async (req: Request, res: Response, next: NextFunction) 
       });
       return;
     }
-    const result = await findAll(parsed.data);
+
+    // Convert comma-separated ids to array
+    const filters = {
+      ...parsed.data,
+      ids: parsed.data.ids
+        ? parsed.data.ids.split(',').filter((id: string) => id.length > 0)
+        : undefined,
+    };
+
+    const result = await findAll(filters);
     res.json(result);
   } catch (err) {
     next(err);
