@@ -15,6 +15,7 @@ import { wishlistSubscriptionsRouter } from './routes/wishlist-subscriptions.js'
 import { reviewsRouter } from './routes/reviews.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { adminRouter } from './routes/admin.js';
+import { searchRouter } from './routes/search.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { config } from './config.js';
 
@@ -55,6 +56,7 @@ export function createApp() {
 app.use('/reviews', reviewsRouter);
 app.use('/mitra/analytics', analyticsRouter);
 app.use('/admin', adminRouter);
+app.use('/products/trending', searchRouter);
 
 app.use(errorHandler);
 

@@ -286,6 +286,16 @@ export async function search(options: SearchOptions): Promise<ProductSearchRespo
 
   const total = Number(countResult[0]?.count || 0);
 
+  // Track search query for trending
+  if (q) {
+    const normalizedQuery = q.toLowerCase().trim();
+    prisma.searchQuery.upsert({
+      where: { query: normalizedQuery },
+      update: { count: { increment: 1 } },
+      create: { query: normalizedQuery, count: 1 },
+    }).catch(() => {}); // fire-and-forget, don't block search results
+  }
+
   return {
     products: products.map(toProductResponse),
     total,
