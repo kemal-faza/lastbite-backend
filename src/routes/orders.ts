@@ -6,6 +6,7 @@ import {
   getUserOrders,
   getOrderById,
   verifyPickup,
+  cancelExpiredOrder,
   hasOrderHistory,
   OrderError,
 } from '../services/orderService.js';
@@ -123,6 +124,32 @@ ordersRouter.post('/:id/verify-pickup', async (req: Request, res: Response, next
         INVALID_STATUS: 409,
         INVALID_PICKUP_CODE: 400,
         PICKUP_EXPIRED: 400,
+      };
+      const status = statusMap[err.code] || 400;
+      res.status(status).json({ error: err.message, code: err.code });
+      return;
+    }
+    next(err);
+  }
+});
+
+// POST /orders/:id/cancel-expired - auto-cancel order with expired pickup code (food-saver)
+ordersRouter.post('/:id/cancel-expired', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const paramParsed = z.string().min(1).safeParse(req.params.id);
+    if (!paramParsed.success) {
+      res.status(400).json({ error: 'ID pesanan tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
+
+    const order = await cancelExpiredOrder(req.user!.userId, paramParsed.data);
+    res.json({ order, message: 'Pesanan dibatalkan karena kode pickup kedaluwarsa' });
+  } catch (err) {
+    if (err instanceof OrderError) {
+      const statusMap: Record<string, number> = {
+        ORDER_NOT_FOUND: 404,
+        INVALID_STATUS: 409,
+        NOT_EXPIRED: 400,
       };
       const status = statusMap[err.code] || 400;
       res.status(status).json({ error: err.message, code: err.code });

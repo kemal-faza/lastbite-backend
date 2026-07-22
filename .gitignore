@@ -4,3 +4,4 @@ dist/
 .env.test
 uploads/*
 !uploads/.gitkeep
+.codegraph/

@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { getCart } from './cartService.js';
-import { sendNotificationPush } from './notificationService.js';
+import { createNotification, sendNotificationPush } from './notificationService.js';
 import { deriveImageVariants } from './imageVariants.js';
 
 type ImageVariantsObj = { thumb: string; card: string; full: string } | null;
@@ -196,6 +196,72 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
 }
 
 export async function getUserOrders(userId: string) {
+  // Auto-cancel expired orders before returning (lazy check for list view)
+  const expiredOrders = await prisma.order.findMany({
+    where: {
+      userId,
+      status: { notIn: ['PICKED_UP', 'CANCELLED'] },
+      pickupExpiresAt: { lt: new Date() },
+    },
+    include: { items: true },
+  });
+
+  for (const order of expiredOrders) {
+    await prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: 'CANCELLED' },
+      });
+
+      for (const item of order.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+    });
+
+    // Find affected mitras
+    const productIds = order.items.map((i) => i.productId);
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, mitraId: true },
+    });
+    const uniqueMitraIds = [...new Set(products.map((p) => p.mitraId).filter(Boolean))];
+
+    // Notify food-saver
+    await createNotification({
+      userId,
+      title: 'Pesanan Dibatalkan',
+      body: 'Pesanan kamu dibatalkan karena kode pickup sudah kedaluwarsa',
+      type: 'order_status',
+      data: { orderId: order.id, status: 'CANCELLED' },
+    });
+    sendNotificationPush(
+      userId,
+      'Pesanan Dibatalkan',
+      'Pesanan kamu dibatalkan karena kode pickup sudah kedaluwarsa',
+      { orderId: order.id, status: 'CANCELLED', type: 'order_status' }
+    );
+
+    // Notify each affected mitra
+    for (const mitraId of uniqueMitraIds) {
+      await createNotification({
+        userId: mitraId as string,
+        title: 'Pesanan Kedaluwarsa',
+        body: `Pesanan ${order.id.slice(0, 8)} dibatalkan karena kode pickup tidak diambil tepat waktu`,
+        type: 'order_status',
+        data: { orderId: order.id, status: 'CANCELLED' },
+      });
+      sendNotificationPush(
+        mitraId as string,
+        'Pesanan Kedaluwarsa',
+        `Pesanan ${order.id.slice(0, 8)} dibatalkan karena kode pickup tidak diambil tepat waktu`,
+        { orderId: order.id, status: 'CANCELLED', type: 'order_status' }
+      );
+    }
+  }
+
   const orders = await prisma.order.findMany({
     where: { userId },
     include: { items: true, review: true },
@@ -215,6 +281,89 @@ export async function getOrderById(userId: string, orderId: string) {
   }
 
   return addImageVariantsToOrder(order);
+}
+
+export async function cancelExpiredOrder(userId: string, orderId: string) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId },
+    include: { items: true },
+  });
+
+  if (!order) {
+    throw new OrderError('Pesanan tidak ditemukan', 'ORDER_NOT_FOUND');
+  }
+
+  if (order.status === 'PICKED_UP') {
+    throw new OrderError('Pesanan sudah diambil', 'INVALID_STATUS');
+  }
+  if (order.status === 'CANCELLED') {
+    throw new OrderError('Pesanan sudah dibatalkan', 'INVALID_STATUS');
+  }
+
+  // CRITICAL: only allow cancel if actually expired
+  if (new Date() <= order.pickupExpiresAt) {
+    throw new OrderError('Kode pickup belum kedaluwarsa', 'NOT_EXPIRED');
+  }
+
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    const updated = await tx.order.update({
+      where: { id: orderId },
+      data: { status: 'CANCELLED' },
+      include: { items: true },
+    });
+
+    // Restore stock for each item
+    for (const item of order.items) {
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { stock: { increment: item.quantity } },
+      });
+    }
+
+    return updated;
+  });
+
+  // Find affected mitras
+  const productIds = order.items.map((i) => i.productId);
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { id: true, mitraId: true },
+  });
+  const uniqueMitraIds = [...new Set(products.map((p) => p.mitraId).filter(Boolean))];
+
+  // Notify food-saver
+  await createNotification({
+    userId,
+    title: 'Pesanan Dibatalkan',
+    body: 'Pesanan kamu dibatalkan karena kode pickup sudah kedaluwarsa',
+    type: 'order_status',
+    data: { orderId, status: 'CANCELLED' },
+  });
+  sendNotificationPush(
+    userId,
+    'Pesanan Dibatalkan',
+    'Pesanan kamu dibatalkan karena kode pickup sudah kedaluwarsa',
+    { orderId, status: 'CANCELLED', type: 'order_status' }
+  );
+
+  // Notify each affected mitra
+  for (const mitraId of uniqueMitraIds) {
+    await createNotification({
+      userId: mitraId as string,
+      title: 'Pesanan Kedaluwarsa',
+      body: `Pesanan ${orderId.slice(0, 8)} dibatalkan karena kode pickup tidak diambil tepat waktu`,
+      type: 'order_status',
+      data: { orderId, status: 'CANCELLED' },
+    });
+    sendNotificationPush(
+      mitraId as string,
+      'Pesanan Kedaluwarsa',
+      `Pesanan ${orderId.slice(0, 8)} dibatalkan karena kode pickup tidak diambil tepat waktu`,
+      { orderId, status: 'CANCELLED', type: 'order_status' }
+    );
+  }
+
+  return addImageVariantsToOrder(updatedOrder);
 }
 
 export async function verifyPickup(

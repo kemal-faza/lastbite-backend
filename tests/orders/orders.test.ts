@@ -268,4 +268,108 @@ describe('Orders API', () => {
       expect(res.body.code).toBe('PICKUP_EXPIRED');
     });
   });
+
+  describe('POST /orders/:id/cancel-expired', () => {
+    let orderId: string;
+    let pickupCode: string;
+
+    beforeEach(async () => {
+      // Create an order for cancel tests
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 2 });
+
+      const createRes = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerName: 'Budi', buyerPhone: '08123456789' });
+
+      orderId = createRes.body.order.id;
+      pickupCode = createRes.body.order.pickupCode;
+    });
+
+    it('should cancel expired order and restore stock', async () => {
+      // Set pickup to the past
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { pickupExpiresAt: new Date(Date.now() - 3600000) },
+      });
+
+      const res = await request(app)
+        .post(`/orders/${orderId}/cancel-expired`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.order.status).toBe('CANCELLED');
+      expect(res.body.message).toBe('Pesanan dibatalkan karena kode pickup kedaluwarsa');
+
+      // Verify stock was restored (5 initial - 2 for order + 2 restored = 5)
+      const product = await prisma.product.findUnique({ where: { id: productId } });
+      expect(product!.stock).toBe(5);
+    });
+
+    it('should return 400 NOT_EXPIRED if pickup code not yet expired', async () => {
+      const futureExpiry = new Date(Date.now() + 7200000); // 2h from now
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { pickupExpiresAt: futureExpiry },
+      });
+
+      const res = await request(app)
+        .post(`/orders/${orderId}/cancel-expired`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('NOT_EXPIRED');
+    });
+
+    it('should return 409 for already PICKED_UP order', async () => {
+      // Set status to PICKED_UP directly (status takes precedence over expiry check)
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { status: 'PICKED_UP', pickupExpiresAt: new Date(Date.now() - 3600000) },
+      });
+
+      const res = await request(app)
+        .post(`/orders/${orderId}/cancel-expired`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('INVALID_STATUS');
+    });
+
+    it('should return 409 for already CANCELLED order', async () => {
+      // Set expired and cancel first
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { pickupExpiresAt: new Date(Date.now() - 3600000) },
+      });
+
+      await request(app)
+        .post(`/orders/${orderId}/cancel-expired`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      const res = await request(app)
+        .post(`/orders/${orderId}/cancel-expired`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('INVALID_STATUS');
+    });
+
+    it('should return 404 for non-existent order', async () => {
+      const res = await request(app)
+        .post('/orders/00000000-0000-0000-0000-000000000000/cancel-expired')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ORDER_NOT_FOUND');
+    });
+
+    it('should return 401 without auth', async () => {
+      const res = await request(app).post(`/orders/${orderId}/cancel-expired`);
+      expect(res.status).toBe(401);
+    });
+  });
 });
