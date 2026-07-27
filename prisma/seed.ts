@@ -688,7 +688,7 @@ async function ensureAdminUser(): Promise<string> {
     return existing.id;
   }
 
-  const passwordHash = await bcrypt.hash("admin123", SALT_ROUNDS);
+  const passwordHash = await bcrypt.hash("AdminL4stB1t3!2026", SALT_ROUNDS);
   const user = await prisma.user.create({
     data: {
       email: ADMIN_EMAIL,
@@ -699,7 +699,7 @@ async function ensureAdminUser(): Promise<string> {
       isVerified: true,
     },
   });
-  console.log(`Created ADMIN user: ${ADMIN_EMAIL} (password: admin123)`);
+  console.log(`Created ADMIN user: ${ADMIN_EMAIL} (password: AdminL4stB1t3!2026)`);
   return user.id;
 }
 
@@ -712,7 +712,7 @@ async function seedFoodSaverUser(): Promise<string> {
     return existing.id;
   }
 
-  const passwordHash = await bcrypt.hash("foodsaver123", SALT_ROUNDS);
+  const passwordHash = await bcrypt.hash("FoodS4v3r!2026", SALT_ROUNDS);
   const user = await prisma.user.create({
     data: {
       email: FOOD_SAVER_EMAIL,
@@ -723,7 +723,7 @@ async function seedFoodSaverUser(): Promise<string> {
       isVerified: true,
     },
   });
-  console.log(`Created FOOD_SAVER user: ${FOOD_SAVER_EMAIL} (password: foodsaver123)`);
+  console.log(`Created FOOD_SAVER user: ${FOOD_SAVER_EMAIL} (password: FoodS4v3r!2026)`);
   return user.id;
 }
 

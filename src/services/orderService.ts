@@ -2,6 +2,7 @@ import { prisma } from '../lib/prisma.js';
 import { getCart } from './cartService.js';
 import { createNotification, sendNotificationPush } from './notificationService.js';
 import { deriveImageVariants } from './imageVariants.js';
+import { cancelExpiredOrdersForUser } from './orderCleanupService.js';
 
 type ImageVariantsObj = { thumb: string; card: string; full: string } | null;
 
@@ -195,79 +196,31 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
   return addImageVariantsToOrder(order);
 }
 
-export async function getUserOrders(userId: string) {
-  // Auto-cancel expired orders before returning (lazy check for list view)
-  const expiredOrders = await prisma.order.findMany({
-    where: {
-      userId,
-      status: { notIn: ['PICKED_UP', 'CANCELLED'] },
-      pickupExpiresAt: { lt: new Date() },
-    },
-    include: { items: true },
-  });
+export async function getUserOrders(userId: string, page = 1, limit = 20) {
+  // Fire-and-forget expired order cleanup (don't block response)
+  cancelExpiredOrdersForUser(userId).catch((err: unknown) =>
+    console.warn('[OrderCleanup] Background cleanup failed:', (err as Error).message)
+  );
 
-  for (const order of expiredOrders) {
-    await prisma.$transaction(async (tx) => {
-      await tx.order.update({
-        where: { id: order.id },
-        data: { status: 'CANCELLED' },
-      });
+  const skip = (page - 1) * limit;
+  const [orders, total] = await Promise.all([
+    prisma.order.findMany({
+      where: { userId },
+      include: { items: true, review: true },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+    prisma.order.count({ where: { userId } }),
+  ]);
 
-      for (const item of order.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        });
-      }
-    });
-
-    // Find affected mitras
-    const productIds = order.items.map((i) => i.productId);
-    const products = await prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: { id: true, mitraId: true },
-    });
-    const uniqueMitraIds = [...new Set(products.map((p) => p.mitraId).filter(Boolean))];
-
-    // Notify food-saver
-    await createNotification({
-      userId,
-      title: 'Pesanan Dibatalkan',
-      body: 'Pesanan kamu dibatalkan karena kode pickup sudah kedaluwarsa',
-      type: 'order_status',
-      data: { orderId: order.id, status: 'CANCELLED' },
-    });
-    sendNotificationPush(
-      userId,
-      'Pesanan Dibatalkan',
-      'Pesanan kamu dibatalkan karena kode pickup sudah kedaluwarsa',
-      { orderId: order.id, status: 'CANCELLED', type: 'order_status' }
-    );
-
-    // Notify each affected mitra
-    for (const mitraId of uniqueMitraIds) {
-      await createNotification({
-        userId: mitraId as string,
-        title: 'Pesanan Kedaluwarsa',
-        body: `Pesanan ${order.id.slice(0, 8)} dibatalkan karena kode pickup tidak diambil tepat waktu`,
-        type: 'order_status',
-        data: { orderId: order.id, status: 'CANCELLED' },
-      });
-      sendNotificationPush(
-        mitraId as string,
-        'Pesanan Kedaluwarsa',
-        `Pesanan ${order.id.slice(0, 8)} dibatalkan karena kode pickup tidak diambil tepat waktu`,
-        { orderId: order.id, status: 'CANCELLED', type: 'order_status' }
-      );
-    }
-  }
-
-  const orders = await prisma.order.findMany({
-    where: { userId },
-    include: { items: true, review: true },
-    orderBy: { createdAt: 'desc' },
-  });
-  return orders.map(addImageVariantsToOrder);
+  return {
+    orders: orders.map(addImageVariantsToOrder),
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  };
 }
 
 export async function getOrderById(userId: string, orderId: string) {

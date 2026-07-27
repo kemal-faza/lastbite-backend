@@ -2,8 +2,8 @@ import 'dotenv/config';
 
 export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
-  jwtSecret: process.env.JWT_SECRET || 'dev-jwt-secret-not-for-production',
-  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-not-for-production',
+  jwtSecret: process.env.JWT_SECRET ?? (() => { throw new Error('FATAL: JWT_SECRET environment variable is required'); })(),
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? (() => { throw new Error('FATAL: JWT_REFRESH_SECRET environment variable is required'); })(),
   jwtAccessExpiry: '15m' as const,
   jwtRefreshExpiry: '7d' as const,
   otpExpiryMinutes: 5,
@@ -17,6 +17,7 @@ export const config = {
     provider: (process.env.UPLOAD_PROVIDER || 'local') as 'local' | 's3',
     localDir: process.env.UPLOAD_LOCAL_DIR || 'uploads',
     maxFileSize: parseInt(process.env.UPLOAD_MAX_SIZE || '5242880', 10),
+    jsonBodyLimit: process.env.JSON_BODY_LIMIT || '100kb',
     imageVariants: {
       thumb: parseInt(process.env.UPLOAD_VARIANT_THUMB_SIZE || '200', 10),
       card: parseInt(process.env.UPLOAD_VARIANT_CARD_SIZE || '400', 10),

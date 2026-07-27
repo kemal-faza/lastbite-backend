@@ -22,6 +22,13 @@ export class InsufficientStockError extends CartError {
   }
 }
 
+export class UserNotFoundError extends CartError {
+  constructor() {
+    super('User tidak ditemukan', 'USER_NOT_FOUND');
+    this.name = 'UserNotFoundError';
+  }
+}
+
 export interface CartWithItems {
   id: string;
   userId: string;
@@ -70,6 +77,10 @@ async function getCartOrCreate(userId: string) {
   });
 
   if (!cart) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UserNotFoundError();
+    }
     cart = await prisma.cart.create({
       data: { userId },
       include: {
@@ -106,6 +117,10 @@ export async function addToCart(
       include: { items: true },
     });
     if (!cart) {
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (!user) {
+        throw new UserNotFoundError();
+      }
       cart = await tx.cart.create({
         data: { userId },
         include: { items: true },

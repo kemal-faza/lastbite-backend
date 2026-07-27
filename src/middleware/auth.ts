@@ -31,6 +31,12 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
 export function requireMitra(req: Request, res: Response, next: NextFunction): void {
   requireAuth(req, res, () => {
+    // Fast path: read role from JWT (available on new tokens)
+    if (req.user?.role === 'MITRA') {
+      return next();
+    }
+
+    // Fallback: old tokens without role — check DB
     prisma.user
       .findUnique({
         where: { id: req.user!.userId },
@@ -51,6 +57,12 @@ export function requireMitra(req: Request, res: Response, next: NextFunction): v
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   requireAuth(req, res, () => {
+    // Fast path: read role from JWT (available on new tokens)
+    if (req.user?.role === 'ADMIN') {
+      return next();
+    }
+
+    // Fallback: old tokens without role — check DB
     prisma.user
       .findUnique({
         where: { id: req.user!.userId },

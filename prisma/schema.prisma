@@ -70,6 +70,12 @@ model Product {
   @@index([category])
   @@index([mitraId])
   @@index([isActive])
+  @@index([expiresAt])
+  @@index([discountedPrice])
+  @@index([createdAt(sort: Desc)])
+  @@index([storeName])
+  @@index([storeLat, storeLng])
+  @@index([isActive, category, createdAt(sort: Desc)])
   @@map("products")
 }
 
@@ -134,6 +140,7 @@ model Order {
 
   @@index([userId])
   @@index([pickupCode])
+  @@index([userId, status])
   @@map("orders")
 }
 

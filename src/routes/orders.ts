@@ -47,11 +47,17 @@ ordersRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
   }
 });
 
-// GET /orders - get all user orders
+// GET /orders - get all user orders (paginated)
+const orderListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+});
+
 ordersRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const orders = await getUserOrders(req.user!.userId);
-    res.json({ orders });
+    const params = orderListQuerySchema.parse(req.query);
+    const result = await getUserOrders(req.user!.userId, params.page, params.limit);
+    res.json(result);
   } catch (err) {
     next(err);
   }

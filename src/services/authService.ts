@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../lib/prisma.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import { getOtpSender } from '../lib/otpSender.js';
+import { hashOtp, verifyOtpCode } from '../lib/otp.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../lib/jwt.js';
 import { config } from '../config.js';
 import { toUserResponse } from '../lib/userResponse.js';
@@ -33,7 +34,8 @@ export async function register(input: {
   }
 
   const passwordHash = await hashPassword(input.password);
-  const verificationCode = generateOtpCode();
+  const rawCode = generateOtpCode();
+  const hashedCode = await hashOtp(rawCode);
   const verificationCodeExpiresAt = new Date(
     Date.now() + config.otpExpiryMinutes * 60 * 1000
   );
@@ -44,12 +46,12 @@ export async function register(input: {
       name: input.name,
       phone: input.phone || null,
       passwordHash,
-      verificationCode,
+      verificationCode: hashedCode,
       verificationCodeExpiresAt,
     },
   });
 
-  await getOtpSender().sendOtp(user.email, verificationCode);
+  await getOtpSender().sendOtp(user.email, rawCode);
 
   return { user: toUserResponse(user) };
 }
@@ -87,7 +89,7 @@ export async function login(input: {
     throw new AccountNotVerifiedError();
   }
 
-  const accessToken = signAccessToken({ userId: user.id, email: user.email });
+  const accessToken = signAccessToken({ userId: user.id, email: user.email, role: user.role });
   const refreshToken = signRefreshToken({ userId: user.id });
 
   await prisma.user.update({
@@ -141,10 +143,14 @@ export async function verifyOtp(input: { email: string; code: string }): Promise
   }
 
   if (
-    user.verificationCode !== input.code ||
     !user.verificationCodeExpiresAt ||
     user.verificationCodeExpiresAt < new Date()
   ) {
+    throw new InvalidOtpError();
+  }
+
+  const codeValid = await verifyOtpCode(input.code, user.verificationCode ?? '');
+  if (!codeValid) {
     throw new InvalidOtpError();
   }
 
@@ -171,17 +177,18 @@ export async function resendOtp(input: { email: string }): Promise<void> {
     throw new AccountAlreadyVerifiedError();
   }
 
-  const verificationCode = generateOtpCode();
+  const rawCode = generateOtpCode();
+  const hashedCode = await hashOtp(rawCode);
   const verificationCodeExpiresAt = new Date(
     Date.now() + config.otpExpiryMinutes * 60 * 1000
   );
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { verificationCode, verificationCodeExpiresAt },
+    data: { verificationCode: hashedCode, verificationCodeExpiresAt },
   });
 
-  await getOtpSender().sendOtp(user.email, verificationCode);
+  await getOtpSender().sendOtp(user.email, rawCode);
 }
 
 export async function refreshAccessToken(token: string): Promise<AuthTokens> {
@@ -197,7 +204,7 @@ export async function refreshAccessToken(token: string): Promise<AuthTokens> {
     throw new InvalidRefreshTokenError();
   }
 
-  const accessToken = signAccessToken({ userId: user.id, email: user.email });
+  const accessToken = signAccessToken({ userId: user.id, email: user.email, role: user.role });
   const refreshToken = signRefreshToken({ userId: user.id });
 
   await prisma.user.update({

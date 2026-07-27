@@ -13,6 +13,7 @@ export class ProductNotFoundError extends Error {
 
 export interface ProductListOptions {
   category?: string;
+  search?: string;
   sort?: 'price_asc' | 'price_desc' | 'newest' | 'oldest' | 'distance_asc' | 'stock_asc';
   page?: number;
   limit?: number;
@@ -76,11 +77,29 @@ function toProductResponse(
 }
 
 export async function findAll(options: ProductListOptions = {}): Promise<ProductListResponse> {
-  const { category, sort = 'newest', page = 1, limit = 20, lat, lng, radius, maxPrice, expiry, ids } = options;
+  const { category, search, sort = 'newest', page = 1, limit = 20, lat, lng, radius, maxPrice, expiry, ids } = options;
 
   const where: Prisma.ProductWhereInput = { isActive: true };
   if (category) {
     where.category = category as Prisma.EnumCategoryFilter['equals'];
+  }
+  if (search && search.trim().length > 0) {
+    const searchTerm = search.trim();
+    where.OR = [
+      { name: { contains: searchTerm, mode: 'insensitive' } },
+      { storeName: { contains: searchTerm, mode: 'insensitive' } },
+      { description: { contains: searchTerm, mode: 'insensitive' } },
+    ];
+
+    // Track search query for trending
+    const normalizedQuery = searchTerm.toLowerCase();
+    prisma.searchQuery.upsert({
+      where: { query: normalizedQuery },
+      update: { count: { increment: 1 } },
+      create: { query: normalizedQuery, count: 1 },
+    }).catch((err: unknown) => {
+      console.warn('[SearchTracking] Failed to track query:', (err as Error).message);
+    });
   }
   if (ids && ids.length > 0) {
     where.id = { in: ids };
@@ -110,6 +129,8 @@ export async function findAll(options: ProductListOptions = {}): Promise<Product
   }
 
   // Proximity flow: fetch ALL products, compute distances, filter, sort, paginate in-memory
+  // TODO: Scale — this loads ALL products into memory. For production with >2K products,
+  // migrate to PostGIS ST_DWithin or add geohash-based pre-filter to reduce the working set.
   if (lat !== undefined && lng !== undefined) {
     const allProducts = await prisma.product.findMany({ where });
 
@@ -297,7 +318,9 @@ export async function search(options: SearchOptions): Promise<ProductSearchRespo
       where: { query: normalizedQuery },
       update: { count: { increment: 1 } },
       create: { query: normalizedQuery, count: 1 },
-    }).catch(() => {}); // fire-and-forget, don't block search results
+    }).catch((err: unknown) => {
+      console.warn('[SearchTracking] Failed to track query:', (err as Error).message);
+    });
   }
 
   return {

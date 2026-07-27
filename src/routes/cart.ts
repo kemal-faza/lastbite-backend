@@ -10,6 +10,7 @@ import {
   CartError,
   InsufficientStockError,
   ProductNotFoundError,
+  UserNotFoundError,
 } from '../services/cartService.js';
 import { addToCartSchema, updateCartItemSchema } from '../validators/cart.js';
 
@@ -24,6 +25,10 @@ cartRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const cart = await getCart(req.user!.userId);
     res.json({ cart });
   } catch (err) {
+    if (err instanceof UserNotFoundError) {
+      res.status(401).json({ error: 'User tidak ditemukan / token tidak valid', code: 'UNAUTHORIZED' });
+      return;
+    }
     next(err);
   }
 });

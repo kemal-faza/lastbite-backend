@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 
-export function signAccessToken(payload: { userId: string; email: string }): string {
+export function signAccessToken(payload: { userId: string; email: string; role?: string }): string {
   return jwt.sign(payload, config.jwtSecret, {
     expiresIn: config.jwtAccessExpiry,
     jwtid: crypto.randomUUID(),
@@ -19,6 +19,7 @@ export function signRefreshToken(payload: { userId: string }): string {
 export interface JwtPayload {
   userId: string;
   email: string;
+  role?: string;
 }
 
 export function verifyAccessToken(token: string): JwtPayload {
