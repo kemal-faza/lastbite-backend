@@ -29,7 +29,8 @@ describe('POST /auth/register', () => {
     });
     expect(dbUser).not.toBeNull();
     expect(dbUser!.verificationCode).toBeDefined();
-    expect(dbUser!.verificationCode!.length).toBe(6);
+    // OTP is stored hashed (bcrypt) — never as plaintext.
+    expect(dbUser!.verificationCode!.startsWith('$2')).toBe(true);
   });
 
   it('should return 400 for invalid email', async () => {

@@ -51,9 +51,9 @@ describe('GET /mitra/analytics/peak-hours', () => {
       },
     });
 
-    const date10am = new Date();
-    date10am.setDate(date10am.getDate() - 1);
-    date10am.setHours(10, 0, 0, 0);
+    // Anchor orders inside the query window so the test is time-of-day independent.
+    const date10am = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2h ago
+    const peakHourA = date10am.getHours();
     await prisma.order.create({
       data: {
         userId: buyer.id,
@@ -79,9 +79,8 @@ describe('GET /mitra/analytics/peak-hours', () => {
       },
     });
 
-    const date2pm = new Date();
-    date2pm.setDate(date2pm.getDate() - 1);
-    date2pm.setHours(14, 0, 0, 0);
+    const date2pm = new Date(Date.now() - 5 * 60 * 60 * 1000); // 5h ago
+    const peakHourB = date2pm.getHours();
     await prisma.order.create({
       data: {
         userId: buyer.id,
@@ -107,8 +106,8 @@ describe('GET /mitra/analytics/peak-hours', () => {
       },
     });
 
-    const from = new Date(Date.now() - 86400000).toISOString();
-    const to = new Date().toISOString();
+    const from = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+    const to = new Date(Date.now() + 60 * 1000).toISOString();
 
     const res = await request(app)
       .get(`/mitra/analytics/peak-hours?from=${from}&to=${to}`)
@@ -118,11 +117,14 @@ describe('GET /mitra/analytics/peak-hours', () => {
     expect(res.body.hours).toBeDefined();
     expect(Array.isArray(res.body.hours)).toBe(true);
     expect(res.body.hours.length).toBe(24);
-    expect(res.body.hours[10].orders).toBe(1);
-    expect(res.body.hours[10].items).toBe(2);
-    expect(res.body.hours[14].orders).toBe(1);
-    expect(res.body.hours[14].items).toBe(1);
-    expect(res.body.hours[3].orders).toBe(0);
+    // Assert against the hours the orders were actually placed in.
+    expect(res.body.hours[peakHourA].orders).toBe(1);
+    expect(res.body.hours[peakHourA].items).toBe(2);
+    expect(res.body.hours[peakHourB].orders).toBe(1);
+    expect(res.body.hours[peakHourB].items).toBe(1);
+    // An hour with no orders at all.
+    const emptyHour = (peakHourA + 3) % 24;
+    expect(res.body.hours[emptyHour].orders).toBe(0);
   });
 
   it('should return 401 without auth', async () => {
