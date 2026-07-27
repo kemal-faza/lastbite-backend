@@ -1,7 +1,7 @@
 import { Prisma, Category } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import type { ProductResponse, ProductListResponse, ProductSearchResponse } from '../types/index.js';
-import { filterByProximity } from './locationService.js';
+import { filterByProximity, boundingBox } from './locationService.js';
 import { deriveImageVariants } from './imageVariants.js';
 
 export class ProductNotFoundError extends Error {
@@ -10,6 +10,14 @@ export class ProductNotFoundError extends Error {
     this.name = 'ProductNotFoundError';
   }
 }
+
+/**
+ * When a proximity search is requested without an explicit radius (defensive
+ * default; the API validator requires radius together with lat/lng), bound the
+ * working set to this many km around the reference point so the fetch stays
+ * limited instead of scanning the entire catalog.
+ */
+const DEFAULT_PROXIMITY_RADIUS_KM = 100;
 
 export interface ProductListOptions {
   category?: string;
@@ -128,11 +136,22 @@ export async function findAll(options: ProductListOptions = {}): Promise<Product
     }
   }
 
-  // Proximity flow: fetch ALL products, compute distances, filter, sort, paginate in-memory
-  // TODO: Scale — this loads ALL products into memory. For production with >2K products,
-  // migrate to PostGIS ST_DWithin or add geohash-based pre-filter to reduce the working set.
+  // Proximity flow: pre-filter to a geographic bounding box at the DB layer so
+  // we never load the whole catalog into memory, then compute the precise
+  // (circular) haversine distance in-memory for filtering/sorting/pagination.
+  // TODO(scale): for catalogs larger than a dense metro area, migrate to a
+  // server-side distance query (PostGIS ST_DWithin / geohash) so sorting and
+  // pagination also happen in the DB.
   if (lat !== undefined && lng !== undefined) {
-    const allProducts = await prisma.product.findMany({ where });
+    const radiusKm = radius ?? DEFAULT_PROXIMITY_RADIUS_KM;
+    const box = boundingBox(lat, lng, radiusKm);
+    const proximityWhere: Prisma.ProductWhereInput = {
+      ...where,
+      storeLat: { not: null, gte: box.minLat, lte: box.maxLat },
+      storeLng: { not: null, gte: box.minLng, lte: box.maxLng },
+    };
+
+    const allProducts = await prisma.product.findMany({ where: proximityWhere });
 
     let withDistance = filterByProximity(allProducts, lat, lng, radius);
 
@@ -275,38 +294,40 @@ export async function create(input: CreateProductInput): Promise<ProductResponse
 export async function search(options: SearchOptions): Promise<ProductSearchResponse> {
   const { q, category, page, limit } = options;
 
-  // Use raw SQL for tsvector search with ILIKE fallback
-  const categoryFilter = category ? `AND p."category" = $4` : '';
-  const params: any[] = [q, limit, (page - 1) * limit];
-  if (category) params.push(category);
+  // Raw SQL for tsvector search with ILIKE fallback. Composed via Prisma.sql
+  // so every value (including the optional category clause) is a bound
+  // parameter — injection-safe by construction.
+  const categorySql = category
+    ? Prisma.sql`AND p."category" = ${category}`
+    : Prisma.empty;
 
-  const products = await prisma.$queryRawUnsafe<Array<any>>(
-    `SELECT p."id", p."name", p."description", p."category",
-       p."originalPrice", p."discountedPrice", p."stock",
-       p."imageUrl", p."storeName", p."storeAddress",
-       p."storeLat", p."storeLng", p."expiresAt", p."isActive",
-       p."createdAt", p."updatedAt",
-       ts_rank(p."searchVector", plainto_tsquery('indonesian', $1)) AS rank
-     FROM "products" p
-     WHERE p."isActive" = true
-       AND (p."searchVector" @@ plainto_tsquery('indonesian', $1)
-            OR p."name" ILIKE '%' || $1 || '%'
-            OR p."storeName" ILIKE '%' || $1 || '%')
-       ${categoryFilter}
-     ORDER BY rank DESC, p."createdAt" DESC
-     LIMIT $2 OFFSET $3`,
-    ...params
+  const products = await prisma.$queryRaw<Array<any>>(
+    Prisma.sql`
+      SELECT p."id", p."name", p."description", p."category",
+        p."originalPrice", p."discountedPrice", p."stock",
+        p."imageUrl", p."storeName", p."storeAddress",
+        p."storeLat", p."storeLng", p."expiresAt", p."isActive",
+        p."createdAt", p."updatedAt",
+        ts_rank(p."searchVector", plainto_tsquery('indonesian', ${q})) AS rank
+      FROM "products" p
+      WHERE p."isActive" = true
+        AND (p."searchVector" @@ plainto_tsquery('indonesian', ${q})
+             OR p."name" ILIKE '%' || ${q} || '%'
+             OR p."storeName" ILIKE '%' || ${q} || '%')
+        ${categorySql}
+      ORDER BY rank DESC, p."createdAt" DESC
+      LIMIT ${limit} OFFSET ${(page - 1) * limit}`
   );
 
-  const countResult = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
-    `SELECT COUNT(*)::int as count
-     FROM "products" p
-     WHERE p."isActive" = true
-       AND (p."searchVector" @@ plainto_tsquery('indonesian', $1)
-            OR p."name" ILIKE '%' || $1 || '%'
-            OR p."storeName" ILIKE '%' || $1 || '%')
-       ${categoryFilter}`,
-    ...params.slice(0, category ? 2 : 1)
+  const countResult = await prisma.$queryRaw<Array<{ count: bigint }>>(
+    Prisma.sql`
+      SELECT COUNT(*)::int as count
+      FROM "products" p
+      WHERE p."isActive" = true
+        AND (p."searchVector" @@ plainto_tsquery('indonesian', ${q})
+             OR p."name" ILIKE '%' || ${q} || '%'
+             OR p."storeName" ILIKE '%' || ${q} || '%')
+        ${categorySql}`
   );
 
   const total = Number(countResult[0]?.count || 0);

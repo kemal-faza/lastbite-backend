@@ -23,6 +23,42 @@ function toRad(deg: number): number {
 }
 
 /**
+ * Approximate degree-to-km conversion at the equator.
+ * Used to convert a radial search radius into a lat/lng bounding box,
+ * which lets the database pre-filter the working set before the precise
+ * (circular) haversine distance is computed in memory.
+ */
+const KM_PER_DEG_LAT = 111.32;
+
+export interface BoundingBox {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}
+
+/**
+ * Compute a square bounding box around (lat, lng) that fully contains the
+ * circle of the given radius. The box over-selects (corners) on purpose;
+ * the precise circular filter is applied afterwards by `filterByProximity`.
+ */
+export function boundingBox(lat: number, lng: number, radiusKm: number): BoundingBox {
+  const dLat = radiusKm / KM_PER_DEG_LAT;
+  const radLat = toRad(lat);
+  const cosLat = Math.cos(radLat);
+  // Guard against divide-by-zero near the poles (irrelevant for this app's
+  // operating area, but keeps the math safe).
+  const dLng = cosLat !== 0 ? radiusKm / (KM_PER_DEG_LAT * cosLat) : 180;
+
+  return {
+    minLat: lat - dLat,
+    maxLat: lat + dLat,
+    minLng: lng - dLng,
+    maxLng: lng + dLng,
+  };
+}
+
+/**
  * Given an array of objects with storeLat/storeLng, compute distance from
  * the reference point and optionally filter by radius.
  * Returns a new array with a `distanceKm` field appended.
