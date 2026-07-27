@@ -2,10 +2,18 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import type { MitraProfileResponse } from '../types/index.js';
 import { geocodeAddress, GeocodingError } from './geocodingService.js';
+import { AppError } from '../errors/AppError.js';
 
-export class MitraError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
+const MITRA_ERROR_STATUSES: Record<string, number> = {
+  ALREADY_MITRA: 409,
+  MITRA_NOT_FOUND: 404,
+  GEOCODING_FAILED: 400,
+};
+
+export class MitraError extends AppError {
+  constructor(message: string, code: string) {
+    const statusCode = MITRA_ERROR_STATUSES[code] ?? 400;
+    super(message, statusCode, code);
     this.name = 'MitraError';
   }
 }

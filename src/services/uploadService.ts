@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { config } from '../config.js';
+import { AppError } from '../errors/AppError.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -83,9 +84,9 @@ export async function deleteFromSpaces(baseKey: string): Promise<void> {
   }
 }
 
-export class UploadError extends Error {
-  constructor(message: string) {
-    super(message);
+export class UploadError extends AppError {
+  constructor(message: string, code?: string) {
+    super(message, 400, code ?? 'UPLOAD_ERROR');
     this.name = 'UploadError';
   }
 }

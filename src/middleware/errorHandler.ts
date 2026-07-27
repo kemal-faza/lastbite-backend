@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { AppError } from '../errors/AppError.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -8,6 +9,14 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  if (err instanceof AppError) {
+    res.status(err.statusCode).json({
+      error: err.message,
+      code: err.code,
+    });
+    return;
+  }
+
   if (isDev) {
     console.error('[Error]', err.message, err.stack);
   } else {

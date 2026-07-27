@@ -4,9 +4,11 @@ import type { ProductResponse, ProductListResponse, ProductSearchResponse } from
 import { filterByProximity, boundingBox } from './locationService.js';
 import { deriveImageVariants } from './imageVariants.js';
 
-export class ProductNotFoundError extends Error {
-  constructor() {
-    super('Produk tidak ditemukan');
+import { AppError } from '../errors/AppError.js';
+
+export class ProductNotFoundError extends AppError {
+  constructor(message?: string) {
+    super(message || 'Produk tidak ditemukan', 404, 'PRODUCT_NOT_FOUND');
     this.name = 'ProductNotFoundError';
   }
 }

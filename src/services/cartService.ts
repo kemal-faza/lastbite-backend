@@ -1,9 +1,18 @@
 import { prisma } from '../lib/prisma.js';
 import { deriveImageVariants } from './imageVariants.js';
+import { AppError } from '../errors/AppError.js';
 
-export class CartError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
+const CART_ERROR_STATUSES: Record<string, number> = {
+  PRODUCT_NOT_FOUND: 404,
+  INSUFFICIENT_STOCK: 409,
+  USER_NOT_FOUND: 401,
+  ITEM_NOT_FOUND: 404,
+};
+
+export class CartError extends AppError {
+  constructor(message: string, code: string) {
+    const statusCode = CART_ERROR_STATUSES[code] ?? 400;
+    super(message, statusCode, code);
     this.name = 'CartError';
   }
 }

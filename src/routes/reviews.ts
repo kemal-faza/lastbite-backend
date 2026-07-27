@@ -6,7 +6,6 @@ import {
   getProductReviews,
   getMitraReviews,
   computeTrustBadges,
-  ReviewError,
 } from '../services/reviewService.js';
 import { createReviewSchema, reviewQuerySchema } from '../validators/reviews.js';
 
@@ -36,17 +35,6 @@ reviewsRouter.post('/orders/:id/review', requireAuth, async (req: Request, res: 
     const review = await createReview(req.user!.userId, paramParsed.data, parsed.data);
     res.status(201).json({ review });
   } catch (err) {
-    if (err instanceof ReviewError) {
-      const statusMap: Record<string, number> = {
-        ORDER_NOT_FOUND: 404,
-        ORDER_NOT_PICKED_UP: 400,
-        DUPLICATE_REVIEW: 409,
-        ORDER_HAS_NO_ITEMS: 400,
-      };
-      const status = statusMap[err.code] || 400;
-      res.status(status).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });

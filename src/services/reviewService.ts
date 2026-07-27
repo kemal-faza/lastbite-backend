@@ -1,10 +1,19 @@
 import { prisma } from '../lib/prisma.js';
 import type { CreateReviewInput } from '../validators/reviews.js';
 import { deriveImageVariants } from './imageVariants.js';
+import { AppError } from '../errors/AppError.js';
 
-export class ReviewError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
+const REVIEW_ERROR_STATUSES: Record<string, number> = {
+  ORDER_NOT_FOUND: 404,
+  ORDER_NOT_PICKED_UP: 400,
+  DUPLICATE_REVIEW: 409,
+  ORDER_HAS_NO_ITEMS: 400,
+};
+
+export class ReviewError extends AppError {
+  constructor(message: string, code: string) {
+    const statusCode = REVIEW_ERROR_STATUSES[code] ?? 400;
+    super(message, statusCode, code);
     this.name = 'ReviewError';
   }
 }

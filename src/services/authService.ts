@@ -14,10 +14,54 @@ function generateOtpCode(): string {
   return crypto.randomInt(min, max + 1).toString();
 }
 
-export class EmailAlreadyExistsError extends Error {
+import { AppError } from '../errors/AppError.js';
+
+export class EmailAlreadyExistsError extends AppError {
   constructor() {
-    super('Email sudah terdaftar');
+    super('Email sudah terdaftar', 409, 'EMAIL_EXISTS');
     this.name = 'EmailAlreadyExistsError';
+  }
+}
+
+export class InvalidCredentialsError extends AppError {
+  constructor() {
+    super('Email atau password salah', 401, 'INVALID_CREDENTIALS');
+    this.name = 'InvalidCredentialsError';
+  }
+}
+
+export class AccountNotVerifiedError extends AppError {
+  constructor() {
+    super('Akun belum diverifikasi. Silakan verifikasi OTP terlebih dahulu.', 403, 'ACCOUNT_NOT_VERIFIED');
+    this.name = 'AccountNotVerifiedError';
+  }
+}
+
+export class InvalidOtpError extends AppError {
+  constructor() {
+    super('Kode verifikasi tidak valid atau telah kedaluwarsa', 400, 'INVALID_OTP');
+    this.name = 'InvalidOtpError';
+  }
+}
+
+export class AccountAlreadyVerifiedError extends AppError {
+  constructor() {
+    super('Akun Anda sudah terverifikasi. Silakan masuk.', 400, 'ALREADY_VERIFIED');
+    this.name = 'AccountAlreadyVerifiedError';
+  }
+}
+
+export class UserNotFoundError extends AppError {
+  constructor() {
+    super('Pengguna tidak ditemukan', 404, 'USER_NOT_FOUND');
+    this.name = 'UserNotFoundError';
+  }
+}
+
+export class InvalidRefreshTokenError extends AppError {
+  constructor() {
+    super('Refresh token tidak valid', 401, 'INVALID_REFRESH_TOKEN');
+    this.name = 'InvalidRefreshTokenError';
   }
 }
 
@@ -56,20 +100,6 @@ export async function register(input: {
   return { user: toUserResponse(user) };
 }
 
-export class InvalidCredentialsError extends Error {
-  constructor() {
-    super('Email atau password salah');
-    this.name = 'InvalidCredentialsError';
-  }
-}
-
-export class AccountNotVerifiedError extends Error {
-  constructor() {
-    super('Akun belum diverifikasi. Silakan verifikasi OTP terlebih dahulu.');
-    this.name = 'AccountNotVerifiedError';
-  }
-}
-
 export async function login(input: {
   email: string;
   password: string;
@@ -101,34 +131,6 @@ export async function login(input: {
     tokens: { accessToken, refreshToken },
     user: toUserResponse(user),
   };
-}
-
-export class InvalidOtpError extends Error {
-  constructor() {
-    super('Kode verifikasi tidak valid atau telah kedaluwarsa');
-    this.name = 'InvalidOtpError';
-  }
-}
-
-export class AccountAlreadyVerifiedError extends Error {
-  constructor() {
-    super('Akun sudah terverifikasi');
-    this.name = 'AccountAlreadyVerifiedError';
-  }
-}
-
-export class UserNotFoundError extends Error {
-  constructor() {
-    super('Pengguna tidak ditemukan');
-    this.name = 'UserNotFoundError';
-  }
-}
-
-export class InvalidRefreshTokenError extends Error {
-  constructor() {
-    super('Refresh token tidak valid');
-    this.name = 'InvalidRefreshTokenError';
-  }
 }
 
 export async function verifyOtp(input: { email: string; code: string }): Promise<{ verified: boolean }> {

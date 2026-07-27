@@ -1,10 +1,10 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireMitra } from '../middleware/auth.js';
-import { registerMitra, getMitraProfile, updateMitraProfile, updateMitraLocation, MitraError } from '../services/mitraService.js';
-import { getMitraProducts, updateMitraProduct, deleteMitraProduct, MitraProductError } from '../services/mitraProductService.js';
+import { registerMitra, getMitraProfile, updateMitraProfile, updateMitraLocation } from '../services/mitraService.js';
+import { getMitraProducts, updateMitraProduct, deleteMitraProduct } from '../services/mitraProductService.js';
 import { getMitraStats } from '../services/mitraStatsService.js';
-import { getStoreOrders, updateOrderStatus, MitraOrderError } from '../services/mitraOrderService.js';
+import { getStoreOrders, updateOrderStatus } from '../services/mitraOrderService.js';
 import { registerMitraSchema, updateMitraProfileSchema, locationUpdateSchema, updateMitraProductSchema, updateOrderStatusSchema } from '../validators/mitra.js';
 
 export const mitraRouter = Router();
@@ -27,10 +27,6 @@ mitraRouter.post('/register', async (req: Request, res: Response, next: NextFunc
     const profile = await registerMitra(req.user!.userId, parsed.data);
     res.status(201).json({ profile });
   } catch (err) {
-    if (err instanceof MitraError) {
-      res.status(400).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -41,10 +37,6 @@ mitraRouter.get('/me', async (req: Request, res: Response, next: NextFunction) =
     const profile = await getMitraProfile(req.user!.userId);
     res.json({ profile });
   } catch (err) {
-    if (err instanceof MitraError) {
-      res.status(404).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -64,10 +56,6 @@ mitraRouter.patch('/me', async (req: Request, res: Response, next: NextFunction)
     const profile = await updateMitraProfile(req.user!.userId, parsed.data);
     res.json({ profile });
   } catch (err) {
-    if (err instanceof MitraError) {
-      res.status(404).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -87,11 +75,6 @@ mitraRouter.patch('/me/location', async (req: Request, res: Response, next: Next
     const profile = await updateMitraLocation(req.user!.userId, parsed.data);
     res.json({ profile });
   } catch (err) {
-    if (err instanceof MitraError) {
-      const status = err.code === 'GEOCODING_FAILED' ? 400 : 404;
-      res.status(status).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -126,10 +109,6 @@ mitraRouter.patch('/products/:id', requireMitra, async (req: Request, res: Respo
     const product = await updateMitraProduct(req.user!.userId, idParsed.data, parsed.data);
     res.json({ product });
   } catch (err) {
-    if (err instanceof MitraProductError) {
-      res.status(404).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -145,10 +124,6 @@ mitraRouter.delete('/products/:id', requireMitra, async (req: Request, res: Resp
     await deleteMitraProduct(req.user!.userId, idParsed.data);
     res.status(204).end();
   } catch (err) {
-    if (err instanceof MitraProductError) {
-      res.status(404).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -188,11 +163,6 @@ mitraRouter.patch('/orders/:id/status', requireMitra, async (req: Request, res: 
     const order = await updateOrderStatus(req.user!.userId, req.params.id as string, parsed.data.status);
     res.json({ order });
   } catch (err) {
-    if (err instanceof MitraOrderError) {
-      const status = err.code === 'INVALID_TRANSITION' ? 400 : 404;
-      res.status(status).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });

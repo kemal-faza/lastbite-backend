@@ -7,10 +7,6 @@ import {
   updateCartItemQuantity,
   removeFromCart,
   clearCart,
-  CartError,
-  InsufficientStockError,
-  ProductNotFoundError,
-  UserNotFoundError,
 } from '../services/cartService.js';
 import { addToCartSchema, updateCartItemSchema } from '../validators/cart.js';
 
@@ -25,10 +21,6 @@ cartRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const cart = await getCart(req.user!.userId);
     res.json({ cart });
   } catch (err) {
-    if (err instanceof UserNotFoundError) {
-      res.status(401).json({ error: 'User tidak ditemukan / token tidak valid', code: 'UNAUTHORIZED' });
-      return;
-    }
     next(err);
   }
 });
@@ -48,14 +40,6 @@ cartRouter.post('/', async (req: Request, res: Response, next: NextFunction) => 
     const cart = await addToCart(req.user!.userId, parsed.data.productId, parsed.data.quantity);
     res.json({ cart });
   } catch (err) {
-    if (err instanceof InsufficientStockError) {
-      res.status(409).json({ error: err.message, code: err.code });
-      return;
-    }
-    if (err instanceof ProductNotFoundError) {
-      res.status(404).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -91,14 +75,6 @@ cartRouter.patch('/items/:productId', async (req: Request, res: Response, next: 
 
     res.json({ cart });
   } catch (err) {
-    if (err instanceof InsufficientStockError) {
-      res.status(409).json({ error: err.message, code: err.code });
-      return;
-    }
-    if (err instanceof CartError) {
-      res.status(404).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });

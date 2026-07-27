@@ -2,10 +2,16 @@ import { prisma } from '../lib/prisma.js';
 import type { ProductResponse } from '../types/index.js';
 import { deriveImageVariants } from './imageVariants.js';
 import { deleteFromSpaces, extractKeyFromUrl } from './uploadService.js';
+import { AppError } from '../errors/AppError.js';
 
-export class MitraProductError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
+const MITRA_PRODUCT_ERROR_STATUSES: Record<string, number> = {
+  PRODUCT_NOT_FOUND: 404,
+};
+
+export class MitraProductError extends AppError {
+  constructor(message: string, code: string) {
+    const statusCode = MITRA_PRODUCT_ERROR_STATUSES[code] ?? 400;
+    super(message, statusCode, code);
     this.name = 'MitraProductError';
   }
 }

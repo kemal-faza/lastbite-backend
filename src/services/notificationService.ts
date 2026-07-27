@@ -1,9 +1,10 @@
 import { prisma } from '../lib/prisma.js';
 import { sendPush } from '../lib/fcm.js';
+import { AppError } from '../errors/AppError.js';
 
-export class NotificationError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
+export class NotificationError extends AppError {
+  constructor(message: string, code: string) {
+    super(message, 400, code);
     this.name = 'NotificationError';
   }
 }

@@ -1,10 +1,11 @@
 import { prisma } from '../lib/prisma.js';
+import { AppError } from '../errors/AppError.js';
 
 const VALID_PLATFORMS = ['web', 'ios', 'android'] as const;
 
-export class DeviceError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
+export class DeviceError extends AppError {
+  constructor(message: string, code: string) {
+    super(message, 400, code);
     this.name = 'DeviceError';
   }
 }

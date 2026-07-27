@@ -8,7 +8,6 @@ import {
   verifyPickup,
   cancelExpiredOrder,
   hasOrderHistory,
-  OrderError,
 } from '../services/orderService.js';
 import { createOrderSchema, verifyPickupSchema } from '../validators/orders.js';
 
@@ -32,17 +31,6 @@ ordersRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     const order = await createOrder(req.user!.userId, parsed.data);
     res.status(201).json({ order });
   } catch (err) {
-    if (err instanceof OrderError) {
-      const statusMap: Record<string, number> = {
-        CART_EMPTY: 400,
-        PRODUCT_UNAVAILABLE: 409,
-        INSUFFICIENT_STOCK: 409,
-        PICKUP_CODE_ERROR: 500,
-      };
-      const status = statusMap[err.code] || 400;
-      res.status(status).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -95,14 +83,6 @@ ordersRouter.get('/:id', async (req: Request, res: Response, next: NextFunction)
     const order = await getOrderById(req.user!.userId, paramParsed.data);
     res.json({ order });
   } catch (err) {
-    if (err instanceof OrderError) {
-      const statusMap: Record<string, number> = {
-        ORDER_NOT_FOUND: 404,
-      };
-      const status = statusMap[err.code] || 404;
-      res.status(status).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -131,17 +111,6 @@ ordersRouter.post('/:id/verify-pickup', async (req: Request, res: Response, next
     const order = await verifyPickup(req.user!.userId, paramParsed.data, parsed.data.pickupCode);
     res.json({ order, message: 'Pickup berhasil diverifikasi' });
   } catch (err) {
-    if (err instanceof OrderError) {
-      const statusMap: Record<string, number> = {
-        ORDER_NOT_FOUND: 404,
-        INVALID_STATUS: 409,
-        INVALID_PICKUP_CODE: 400,
-        PICKUP_EXPIRED: 400,
-      };
-      const status = statusMap[err.code] || 400;
-      res.status(status).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });
@@ -158,16 +127,6 @@ ordersRouter.post('/:id/cancel-expired', async (req: Request, res: Response, nex
     const order = await cancelExpiredOrder(req.user!.userId, paramParsed.data);
     res.json({ order, message: 'Pesanan dibatalkan karena kode pickup kedaluwarsa' });
   } catch (err) {
-    if (err instanceof OrderError) {
-      const statusMap: Record<string, number> = {
-        ORDER_NOT_FOUND: 404,
-        INVALID_STATUS: 409,
-        NOT_EXPIRED: 400,
-      };
-      const status = statusMap[err.code] || 400;
-      res.status(status).json({ error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 });

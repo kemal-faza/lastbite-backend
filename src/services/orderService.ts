@@ -3,12 +3,26 @@ import { getCart } from './cartService.js';
 import { createNotification, sendNotificationPush } from './notificationService.js';
 import { deriveImageVariants } from './imageVariants.js';
 import { cancelExpiredOrdersForUser } from './orderCleanupService.js';
+import { AppError } from '../errors/AppError.js';
 
 type ImageVariantsObj = { thumb: string; card: string; full: string } | null;
 
-export class OrderError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
+const ORDER_ERROR_STATUSES: Record<string, number> = {
+  CART_EMPTY: 400,
+  PRODUCT_UNAVAILABLE: 409,
+  INSUFFICIENT_STOCK: 409,
+  PICKUP_CODE_ERROR: 500,
+  ORDER_NOT_FOUND: 404,
+  INVALID_STATUS: 409,
+  INVALID_PICKUP_CODE: 400,
+  PICKUP_EXPIRED: 400,
+  NOT_EXPIRED: 400,
+};
+
+export class OrderError extends AppError {
+  constructor(message: string, code: string) {
+    const statusCode = ORDER_ERROR_STATUSES[code] ?? 400;
+    super(message, statusCode, code);
     this.name = 'OrderError';
   }
 }

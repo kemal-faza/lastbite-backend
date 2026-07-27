@@ -63,7 +63,7 @@ describe('POST /mitra/register', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ storeName: 'Store B' });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.code).toBe('ALREADY_MITRA');
   });
 

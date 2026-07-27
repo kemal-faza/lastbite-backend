@@ -2,10 +2,18 @@ import { prisma } from '../lib/prisma.js';
 import type { OrderStatus } from '@prisma/client';
 import { createNotification, sendNotificationPush } from './notificationService.js';
 import { deriveImageVariants } from './imageVariants.js';
+import { AppError } from '../errors/AppError.js';
 
-export class MitraOrderError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
+const MITRA_ORDER_ERROR_STATUSES: Record<string, number> = {
+  ORDER_NOT_FOUND: 404,
+  INVALID_TRANSITION: 400,
+  INVALID_STATUS: 409,
+};
+
+export class MitraOrderError extends AppError {
+  constructor(message: string, code: string) {
+    const statusCode = MITRA_ORDER_ERROR_STATUSES[code] ?? 400;
+    super(message, statusCode, code);
     this.name = 'MitraOrderError';
   }
 }

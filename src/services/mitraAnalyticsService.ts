@@ -1,9 +1,10 @@
 import { prisma } from '../lib/prisma.js';
 import type { SalesTrendEntry } from '../types/index.js';
+import { AppError } from '../errors/AppError.js';
 
-export class AnalyticsError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
+export class AnalyticsError extends AppError {
+  constructor(message: string, code: string) {
+    super(message, 400, code);
     this.name = 'AnalyticsError';
   }
 }

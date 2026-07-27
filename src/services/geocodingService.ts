@@ -1,6 +1,8 @@
-export class GeocodingError extends Error {
+import { AppError } from '../errors/AppError.js';
+
+export class GeocodingError extends AppError {
   constructor(message: string) {
-    super(message);
+    super(message, 500, 'GEOCODING_ERROR');
     this.name = 'GeocodingError';
   }
 }

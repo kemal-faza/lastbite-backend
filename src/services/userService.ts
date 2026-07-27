@@ -3,9 +3,11 @@ import { prisma } from '../lib/prisma.js';
 import { toUserResponse } from '../lib/userResponse.js';
 import type { UserResponse } from '../types/index.js';
 
-export class UserNotFoundError extends Error {
-  constructor() {
-    super('Pengguna tidak ditemukan');
+import { AppError } from '../errors/AppError.js';
+
+export class UserNotFoundError extends AppError {
+  constructor(message?: string) {
+    super(message || 'Pengguna tidak ditemukan', 404, 'USER_NOT_FOUND');
     this.name = 'UserNotFoundError';
   }
 }
