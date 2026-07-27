@@ -151,6 +151,12 @@ mitraRouter.get('/orders', requireMitra, async (req: Request, res: Response, nex
 // PATCH /mitra/orders/:id/status - Update order status
 mitraRouter.patch('/orders/:id/status', requireMitra, async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const idParsed = z.string().uuid().safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: 'ID pesanan tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
+
     const parsed = updateOrderStatusSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -160,7 +166,7 @@ mitraRouter.patch('/orders/:id/status', requireMitra, async (req: Request, res: 
       return;
     }
 
-    const order = await updateOrderStatus(req.user!.userId, req.params.id as string, parsed.data.status);
+    const order = await updateOrderStatus(req.user!.userId, idParsed.data, parsed.data.status);
     res.json({ order });
   } catch (err) {
     next(err);

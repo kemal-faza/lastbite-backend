@@ -1,9 +1,10 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { requireAdmin } from '../middleware/auth.js';
 import { createAuditLog } from '../services/auditLogService.js';
 import { listMitraVerifications, verifyMitra } from '../services/adminMitraService.js';
-import { verifyMitraSchema, paginationSchema, userUpdateSchema } from '../validators/admin.js';
+import { verifyMitraSchema, paginationSchema, userUpdateSchema, platformConfigUpdateSchema } from '../validators/admin.js';
 import { listUsers, getUserDetail, updateUser } from '../services/adminUserService.js';
 import { listAllProducts, toggleProduct } from '../services/adminProductService.js';
 import { getConfig, updateConfig as updatePlatformConfig } from '../services/platformConfigService.js';
@@ -56,6 +57,10 @@ adminRouter.get('/users/:id', async (req: Request, res: Response, next: NextFunc
     const user = await getUserDetail(idParsed.data);
     res.json(user);
   } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+      res.status(404).json({ error: 'Pengguna tidak ditemukan', code: 'USER_NOT_FOUND' });
+      return;
+    }
     next(err);
   }
 });
@@ -162,7 +167,15 @@ adminRouter.get('/config', async (_req: Request, res: Response, next: NextFuncti
 
 adminRouter.patch('/config', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const config = await updatePlatformConfig(req.body, req.user!.userId);
+    const bodyParsed = platformConfigUpdateSchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: bodyParsed.error.errors.map((e) => e.message).join(', '),
+        code: 'VALIDATION_ERROR',
+      });
+      return;
+    }
+    const config = await updatePlatformConfig(bodyParsed.data, req.user!.userId);
 
     await createAuditLog({
       actorId: req.user!.userId,

@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import type { Prisma } from '@prisma/client';
+import { AppError } from '../errors/AppError.js';
 
 export interface ListProductsInput {
   isActive?: boolean;
@@ -61,6 +62,15 @@ export async function listAllProducts(input: ListProductsInput = {}) {
 }
 
 export async function toggleProduct(productId: string, isActive: boolean) {
+  const existing = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    throw new AppError('Produk tidak ditemukan', 404, 'PRODUCT_NOT_FOUND');
+  }
+
   const product = await prisma.product.update({
     where: { id: productId },
     data: { isActive },

@@ -35,7 +35,7 @@ function loadOpenApiSpec(): Record<string, unknown> | undefined {
 
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '10', 10),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Terlalu banyak percobaan. Silakan coba lagi dalam 1 menit.', code: 'RATE_LIMITED' },

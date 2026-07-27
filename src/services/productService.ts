@@ -232,7 +232,7 @@ export async function findAll(options: ProductListOptions = {}): Promise<Product
   ]);
 
   return {
-    products: products.map(toProductResponse),
+    products: products.map((p) => toProductResponse(p)),
     total,
     page,
     limit,
@@ -347,7 +347,7 @@ export async function search(options: SearchOptions): Promise<ProductSearchRespo
   }
 
   return {
-    products: products.map(toProductResponse),
+    products: products.map((p) => toProductResponse(p)),
     total,
     page,
     limit,

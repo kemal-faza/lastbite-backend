@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { AppError } from '../errors/AppError.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -14,6 +15,28 @@ export function errorHandler(
       error: err.message,
       code: err.code,
     });
+    return;
+  }
+
+  // Multer errors: file too large, wrong type, etc.
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(400).json({
+        error: 'Ukuran file terlalu besar. Maksimal 5MB.',
+        code: 'FILE_TOO_LARGE',
+      });
+      return;
+    }
+    res.status(400).json({
+      error: err.message,
+      code: 'UPLOAD_ERROR',
+    });
+    return;
+  }
+
+  // Multer fileFilter rejects with "Format file tidak didukung" (plain Error)
+  if (err.message === 'Format file tidak didukung. Gunakan JPEG, PNG, WebP, atau AVIF.') {
+    res.status(400).json({ error: err.message, code: 'UPLOAD_ERROR' });
     return;
   }
 

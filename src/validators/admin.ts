@@ -14,3 +14,12 @@ export const userUpdateSchema = z.object({
   phone: z.string().max(20).optional(),
   isVerified: z.boolean().optional(),
 });
+
+export const platformConfigUpdateSchema = z.object({
+  commissionRate: z.number().int().min(0).max(100).optional(),
+  supportPhone: z.string().max(100).optional(),
+  categories: z.array(z.string().min(1).max(50)).optional(),
+}).refine(
+  (data) => Object.keys(data).length > 0,
+  { message: 'Setidaknya satu konfigurasi harus diubah' }
+);

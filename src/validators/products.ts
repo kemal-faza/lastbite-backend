@@ -46,7 +46,10 @@ export const createProductSchema = z.object({
   storeLat: z.number().optional().nullable(),
   storeLng: z.number().optional().nullable(),
   expiresAt: z.string().datetime('Format tanggal tidak valid'),
-});
+}).refine(
+  (data) => data.discountedPrice <= data.originalPrice,
+  { message: 'Harga diskon harus lebih kecil dari harga asli', path: ['discountedPrice'] }
+);
 
 export const searchQuerySchema = z.object({
   q: z.string().min(1, 'Query pencarian wajib diisi'),

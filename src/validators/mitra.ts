@@ -45,7 +45,15 @@ export const updateMitraProductSchema = z.object({
   storeAddress: z.string().max(500).optional().nullable(),
   expiresAt: z.string().datetime().optional(),
   isActive: z.boolean().optional(),
-});
+}).refine(
+  (data) => {
+    if (data.originalPrice !== undefined && data.discountedPrice !== undefined) {
+      return data.discountedPrice <= data.originalPrice;
+    }
+    return true;
+  },
+  { message: 'Harga diskon harus lebih kecil dari harga asli', path: ['discountedPrice'] }
+);
 
 export const updateOrderStatusSchema = z.object({
   status: z.enum(['PROCESSED', 'READY', 'PICKED_UP', 'CANCELLED'], {
