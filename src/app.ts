@@ -20,6 +20,18 @@ import { searchRouter } from './routes/search.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requireJson } from './middleware/contentType.js';
 import { config } from './config.js';
+import swaggerUi from 'swagger-ui-express';
+import { load } from 'js-yaml';
+import fs from 'node:fs';
+
+function loadOpenApiSpec(): Record<string, unknown> | undefined {
+  try {
+    const file = path.resolve(process.cwd(), 'openapi.yaml');
+    return load(fs.readFileSync(file, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
 
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -63,6 +75,27 @@ export function createApp() {
   app.use('/mitra/analytics', analyticsRouter);
   app.use('/admin', adminRouter);
   app.use('/products/trending', searchRouter);
+
+  // ---- API documentation (Swagger UI) ----
+  const openApiSpec = loadOpenApiSpec();
+  if (openApiSpec) {
+    // Swagger UI injects an inline init script; relax helmet's CSP for its routes.
+    app.use('/docs', (_req, res, next) => {
+      res.removeHeader('Content-Security-Policy');
+      next();
+    });
+    app.get('/openapi.json', (_req, res) => {
+      res.json(openApiSpec);
+    });
+    app.use(
+      '/docs',
+      swaggerUi.serve,
+      swaggerUi.setup(openApiSpec, {
+        customSiteTitle: 'LastBite API Docs',
+        swaggerOptions: { persistAuth: true },
+      }),
+    );
+  }
 
   app.use(errorHandler);
 

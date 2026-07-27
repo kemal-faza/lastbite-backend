@@ -1,0 +1,2699 @@
+openapi: 3.0.3
+info:
+  title: LastBite API
+  version: 1.0.0
+  description: |
+    REST API for LastBite — a marketplace for surplus/discounted food from merchants ("Mitra").
+
+    ## Authentication
+    Most endpoints require a JWT bearer token:
+    `Authorization: Bearer <accessToken>`
+
+    Tokens are issued at `POST /auth/login` and `POST /auth/register`. Access tokens
+    expire in 15 minutes; use `POST /auth/refresh` with the refresh token to obtain a new pair.
+
+    Roles (carried in the token): `FOOD_SAVER` (customer), `MITRA` (merchant), `ADMIN`.
+
+    ## Content type
+    All JSON request bodies must be sent with `Content-Type: application/json`
+    (the API rejects others with `415 UNSUPPORTED_MEDIA_TYPE`).
+
+    ## Error envelope
+    All errors share this shape:
+    ```json
+    { "error": "<human-readable message (Indonesian)>", "code": "<ERROR_CODE>" }
+    ```
+  contact:
+    name: LastBite
+servers:
+  - url: http://localhost:4000
+    description: Local development (default port; configurable via PORT env)
+tags:
+  - name: System
+    description: Health checks and server-level endpoints.
+  - name: Auth
+    description: Registration, login, OTP verification, and token refresh.
+  - name: Users
+    description: Current user profile management.
+  - name: Products
+    description: Browsing, searching, and (for Mitra) managing products.
+  - name: Search
+    description: Discovery helpers such as trending queries.
+  - name: Cart
+    description: Shopping cart operations for food-savers.
+  - name: Orders
+    description: Order creation, lookup, and pickup verification.
+  - name: Uploads
+    description: Image uploads with processed variant generation.
+  - name: Mitra
+    description: Merchant profile, products, orders, and stats.
+  - name: Analytics
+    description: Mitra sales and performance analytics (plus CSV export).
+  - name: Devices
+    description: FCM device token registration for push notifications.
+  - name: Notifications
+    description: User notifications and read state.
+  - name: Wishlist
+    description: Product wishlist subscriptions.
+  - name: Reviews
+    description: Product and merchant reviews plus trust badges.
+  - name: Admin
+    description: Platform administration, moderation, and config.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      description: Page number (1-indexed).
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    LimitParam:
+      name: limit
+      in: query
+      description: Items per page.
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+    LimitParam100:
+      name: limit
+      in: query
+      description: Items per page.
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    FromParam:
+      name: from
+      in: query
+      description: Start of date range (ISO 8601 datetime).
+      required: true
+      schema:
+        type: string
+        format: date-time
+    ToParam:
+      name: to
+      in: query
+      description: End of date range (ISO 8601 datetime).
+      required: true
+      schema:
+        type: string
+        format: date-time
+  schemas:
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          description: Human-readable message (Indonesian).
+        code:
+          type: string
+          description: Stable machine-readable error code (uppercase snake_case).
+    UserResponse:
+      type: object
+      required: [id, email, name, role, isVerified, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [FOOD_SAVER, MITRA, ADMIN]
+        isVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    AuthTokens:
+      type: object
+      required: [accessToken, refreshToken]
+      properties:
+        accessToken:
+          type: string
+          description: JWT, expires in 15m.
+        refreshToken:
+          type: string
+          description: JWT, expires in 7d.
+    LoginResponse:
+      type: object
+      required: [tokens, user]
+      properties:
+        tokens:
+          $ref: '#/components/schemas/AuthTokens'
+        user:
+          $ref: '#/components/schemas/UserResponse'
+    ImageVariants:
+      type: object
+      nullable: true
+      required: [thumb, card, full]
+      properties:
+        thumb:
+          type: string
+        card:
+          type: string
+        full:
+          type: string
+    ProductResponse:
+      type: object
+      required: [id, name, category, originalPrice, discountedPrice, discountPercent, stock, storeName, expiresAt, isActive, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+          enum: [meals, bakery, drinks]
+        originalPrice:
+          type: integer
+        discountedPrice:
+          type: integer
+        discountPercent:
+          type: integer
+          description: Computed as round((originalPrice - discountedPrice) / originalPrice * 100).
+        stock:
+          type: integer
+        imageUrl:
+          type: string
+          nullable: true
+        imageVariants:
+          $ref: '#/components/schemas/ImageVariants'
+        storeName:
+          type: string
+        storeAddress:
+          type: string
+          nullable: true
+        storeLat:
+          type: number
+          nullable: true
+        storeLng:
+          type: number
+          nullable: true
+        distanceKm:
+          type: number
+          description: Present only when lat/lng were supplied in the request.
+        expiresAt:
+          type: string
+          format: date-time
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ProductListResponse:
+      type: object
+      required: [products, total, page, limit, totalPages]
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalPages:
+          type: integer
+    ProductSearchResponse:
+      type: object
+      required: [products, total, page, limit, query]
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        query:
+          type: string
+    CartProduct:
+      type: object
+      required: [id, name, discountedPrice, originalPrice, stock, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        discountedPrice:
+          type: integer
+        originalPrice:
+          type: integer
+        stock:
+          type: integer
+        imageUrl:
+          type: string
+          nullable: true
+        imageVariants:
+          $ref: '#/components/schemas/ImageVariants'
+        storeName:
+          type: string
+        isActive:
+          type: boolean
+    CartItem:
+      type: object
+      required: [id, productId, quantity, product]
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+        product:
+          $ref: '#/components/schemas/CartProduct'
+    Cart:
+      type: object
+      required: [id, userId, items]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        storeName:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItem'
+    OrderItem:
+      type: object
+      required: [id, productId, name, price, originalPrice, quantity]
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        storeName:
+          type: string
+        price:
+          type: integer
+        originalPrice:
+          type: integer
+        quantity:
+          type: integer
+        imageUrl:
+          type: string
+          nullable: true
+        imageVariants:
+          $ref: '#/components/schemas/ImageVariants'
+    Order:
+      type: object
+      required: [id, userId, storeName, status, pickupCode, totalAmount, savingAmount, hasReviewed, items, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        storeName:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, PROCESSED, READY, PICKED_UP, CANCELLED]
+        pickupCode:
+          type: string
+          description: Format LAST-XXXX.
+        pickupExpiresAt:
+          type: string
+          format: date-time
+        totalAmount:
+          type: integer
+        savingAmount:
+          type: integer
+        buyerName:
+          type: string
+        buyerPhone:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        hasReviewed:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        createdAt:
+          type: string
+          format: date-time
+    MitraOrderItem:
+      type: object
+      required: [id, name, price, quantity]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        price:
+          type: integer
+        quantity:
+          type: integer
+        imageUrl:
+          type: string
+          nullable: true
+        imageVariants:
+          $ref: '#/components/schemas/ImageVariants'
+    MitraOrder:
+      type: object
+      required: [id, status, pickupCode, totalAmount, savingAmount, buyerName, buyerPhone, items, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, PROCESSED, READY, PICKED_UP, CANCELLED]
+        pickupCode:
+          type: string
+        pickupExpiresAt:
+          type: string
+          format: date-time
+        totalAmount:
+          type: integer
+        savingAmount:
+          type: integer
+        buyerName:
+          type: string
+        buyerPhone:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MitraOrderItem'
+        createdAt:
+          type: string
+          format: date-time
+    MitraProfileResponse:
+      type: object
+      required: [id, userId, storeName, verificationStatus, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        storeName:
+          type: string
+        storeDescription:
+          type: string
+          nullable: true
+        storeAddress:
+          type: string
+          nullable: true
+        storeLat:
+          type: number
+          nullable: true
+        storeLng:
+          type: number
+          nullable: true
+        verificationStatus:
+          type: string
+          enum: [PENDING, VERIFIED, REJECTED]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    MitraStatsResponse:
+      type: object
+      required: [totalStock, totalSold, remaining, productCount, activeOrders]
+      properties:
+        totalStock:
+          type: integer
+        totalSold:
+          type: integer
+        remaining:
+          type: integer
+        productCount:
+          type: integer
+        activeOrders:
+          type: integer
+    Device:
+      type: object
+      required: [id, userId, token, platform]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        token:
+          type: string
+        platform:
+          type: string
+          enum: [web, ios, android]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Notification:
+      type: object
+      required: [id, userId, title, body, type, isRead, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body:
+          type: string
+        type:
+          type: string
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+        isRead:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    WishlistSubscription:
+      type: object
+      required: [id, userId, productId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+    ReviewUser:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+    Review:
+      type: object
+      required: [id, orderId, userId, productId, rating, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          nullable: true
+        imageUrl:
+          type: string
+          nullable: true
+        imageVariants:
+          $ref: '#/components/schemas/ImageVariants'
+        user:
+          $ref: '#/components/schemas/ReviewUser'
+        createdAt:
+          type: string
+          format: date-time
+    ReviewListResponse:
+      type: object
+      required: [reviews, avgRating, totalReviews, ratingDistribution, pagination]
+      properties:
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/Review'
+        avgRating:
+          type: number
+          nullable: true
+        totalReviews:
+          type: integer
+        ratingDistribution:
+          type: object
+          properties:
+            "1": { type: integer }
+            "2": { type: integer }
+            "3": { type: integer }
+            "4": { type: integer }
+            "5": { type: integer }
+        pagination:
+          type: object
+          required: [page, limit, total]
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+    TrustBadgesResponse:
+      type: object
+      required: [badges]
+      properties:
+        badges:
+          type: array
+          items:
+            type: object
+            required: [label, icon]
+            properties:
+              label: { type: string }
+              icon: { type: string }
+    RevenueSummary:
+      type: object
+      required: [totalRevenue, totalSavings, totalOrders, totalItems, averageOrderValue]
+      properties:
+        totalRevenue:
+          type: number
+        totalSavings:
+          type: number
+        totalOrders:
+          type: integer
+        totalItems:
+          type: integer
+        averageOrderValue:
+          type: number
+    SalesTrendEntry:
+      type: object
+      required: [date, totalOrders, totalItems, totalRevenue, totalSavings]
+      properties:
+        date:
+          type: string
+          description: YYYY-MM-DD (daily), YYYY-Www (weekly), or YYYY-MM (monthly).
+        totalOrders:
+          type: integer
+        totalItems:
+          type: integer
+        totalRevenue:
+          type: number
+        totalSavings:
+          type: number
+    ProductPerformanceEntry:
+      type: object
+      required: [productId, productName, category, totalSold, totalRevenue, averageRating]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        productName:
+          type: string
+        category:
+          type: string
+        totalSold:
+          type: integer
+        totalRevenue:
+          type: number
+        averageRating:
+          type: number
+    PeakHourEntry:
+      type: object
+      required: [hour, label, orders, items, revenue]
+      properties:
+        hour:
+          type: integer
+        label:
+          type: string
+          description: e.g. "00:00".
+        orders:
+          type: integer
+        items:
+          type: integer
+        revenue:
+          type: number
+    AdminDashboardStats:
+      type: object
+      required: [totalUsers, totalMitra, totalOrders, totalRevenue, pendingVerifications, activeProducts]
+      properties:
+        totalUsers:
+          type: integer
+        totalMitra:
+          type: integer
+        totalOrders:
+          type: integer
+        totalRevenue:
+          type: number
+        pendingVerifications:
+          type: integer
+        activeProducts:
+          type: integer
+    AdminUser:
+      type: object
+      required: [id, email, name, role, isVerified, orderCount, productCount, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [FOOD_SAVER, MITRA, ADMIN]
+        isVerified:
+          type: boolean
+        orderCount:
+          type: integer
+        productCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    AdminUserDetail:
+      type: object
+      required: [id, email, name, role, isVerified, createdAt, updatedAt, orderCount, productCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        role:
+          type: string
+        isVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        mitraProfile:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            storeName: { type: string }
+            verificationStatus:
+              type: string
+              enum: [PENDING, VERIFIED, REJECTED]
+        orderCount:
+          type: integer
+        productCount:
+          type: integer
+    AdminProduct:
+      type: object
+      required: [id, name, category, originalPrice, discountedPrice, stock, storeName, isActive, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        category:
+          type: string
+        originalPrice:
+          type: integer
+        discountedPrice:
+          type: integer
+        stock:
+          type: integer
+        storeName:
+          type: string
+        isActive:
+          type: boolean
+        mitraEmail:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    PlatformConfig:
+      type: object
+      required: [commissionRate, maxPickupHours, categories, featureFlags, supportPhone, termsUrl]
+      properties:
+        commissionRate:
+          type: number
+        maxPickupHours:
+          type: integer
+        categories:
+          type: array
+          items:
+            type: string
+        featureFlags:
+          type: object
+          properties:
+            reviewsEnabled: { type: boolean }
+            mapsEnabled: { type: boolean }
+            wishlistEnabled: { type: boolean }
+        supportPhone:
+          type: string
+        termsUrl:
+          type: string
+    AdminMitraVerification:
+      type: object
+      required: [id, userId, storeName, verificationStatus, user, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        storeName:
+          type: string
+        storeDescription:
+          type: string
+          nullable: true
+        storeAddress:
+          type: string
+          nullable: true
+        storeLat:
+          type: number
+          nullable: true
+        storeLng:
+          type: number
+          nullable: true
+        verificationStatus:
+          type: string
+          enum: [PENDING, VERIFIED, REJECTED]
+        user:
+          type: object
+          required: [email, name, phone, registeredAt]
+          properties:
+            email: { type: string }
+            name: { type: string }
+            phone: { type: string, nullable: true }
+            registeredAt: { type: string, format: date-time }
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    HealthResponse:
+      type: object
+      required: [status, timestamp]
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+    TrendingResponse:
+      type: object
+      required: [queries]
+      properties:
+        queries:
+          type: array
+          items:
+            type: object
+            required: [query, count]
+            properties:
+              query: { type: string }
+              count: { type: integer }
+    UploadResponse:
+      type: object
+      required: [url, key, variants]
+      properties:
+        url:
+          type: string
+          description: URL of the full-size processed variant.
+        key:
+          type: string
+        variants:
+          type: object
+          required: [thumb, card, full]
+          properties:
+            thumb: { type: string }
+            card: { type: string }
+            full: { type: string }
+
+  responses:
+    BadRequest:
+      description: Validation error or invalid input.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Validation failed"
+            code: VALIDATION_ERROR
+    Unauthorized:
+      description: Missing or invalid/expired token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            missing:
+              value: { error: "Akses ditolak. Silakan login terlebih dahulu.", code: UNAUTHORIZED }
+            expired:
+              value: { error: "Sesi telah berakhir. Silakan login kembali.", code: TOKEN_EXPIRED }
+    Forbidden:
+      description: Authenticated but not permitted (wrong role).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Akses hanya untuk Mitra."
+            code: FORBIDDEN
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflict with current state (e.g. duplicate, insufficient stock).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnsupportedMediaType:
+      description: Request was not application/json.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Content-Type harus application/json"
+            code: UNSUPPORTED_MEDIA_TYPE
+    RateLimited:
+      description: Too many requests (applies to /auth).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Terlalu banyak percobaan. Silakan coba lagi dalam 1 menit."
+            code: RATE_LIMITED
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Terjadi kesalahan pada server."
+            code: INTERNAL_ERROR
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new food-saver account
+      description: Rate limited (10 req/min). On success the account is unverified until OTP verification.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                phone:
+                  type: string
+                  minLength: 10
+                  maxLength: 15
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+      responses:
+        '201':
+          description: Account created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, message]
+                properties:
+                  user:
+                    $ref: '#/components/schemas/UserResponse'
+                  message:
+                    type: string
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: Email already registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: { error: "Email sudah terdaftar", code: EMAIL_EXISTS }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and obtain tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Invalid credentials.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Email atau password salah", code: INVALID_CREDENTIALS }
+        '403':
+          description: Account not verified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Akun belum diverifikasi", code: ACCOUNT_NOT_VERIFIED }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access/refresh token pair
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: New token pair.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Invalid refresh token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Refresh token tidak valid", code: INVALID_REFRESH_TOKEN }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Verify account with OTP
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, minLength: 6, maxLength: 6 }
+      responses:
+        '200':
+          description: Verified.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [verified, message]
+                properties:
+                  verified: { type: boolean }
+                  message: { type: string }
+        '400':
+          description: Invalid OTP.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Kode OTP salah", code: INVALID_OTP }
+        '404':
+          description: User not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "User tidak ditemukan", code: USER_NOT_FOUND }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/resend-otp:
+    post:
+      tags: [Auth]
+      summary: Resend OTP verification code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200':
+          description: New code sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message: { type: string }
+        '400':
+          description: Already verified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Akun sudah diverifikasi", code: ALREADY_VERIFIED }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/UserResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Users]
+      summary: Update current user profile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                phone: { type: string, minLength: 10, maxLength: 15 }
+      responses:
+        '200':
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/UserResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /products:
+    get:
+      tags: [Products]
+      summary: List products (filterable, sortable, paginated)
+      security: []
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [meals, bakery, drinks]
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [price_asc, price_desc, newest, oldest, distance_asc, stock_asc]
+            default: newest
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: lat
+          in: query
+          required: false
+          schema: { type: number }
+          description: Required together with lng when using radius.
+        - name: lng
+          in: query
+          required: false
+          schema: { type: number }
+        - name: radius
+          in: query
+          required: false
+          schema: { type: number, minimum: 0, maximum: 500 }
+          description: km; requires lat + lng. Enables distanceKm in responses.
+        - name: maxPrice
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 10000000 }
+        - name: expiry
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["Hari Ini", "< 1 Jam", "< 3 Jam", "< 6 Jam"]
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+          description: Comma-separated product UUIDs.
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Paginated products.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+    post:
+      tags: [Products]
+      summary: Create a product (Mitra only)
+      description: Requires MITRA role.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, category, originalPrice, discountedPrice, stock, storeName, expiresAt]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                description: { type: string, maxLength: 1000 }
+                category: { type: string, enum: [meals, bakery, drinks] }
+                originalPrice: { type: integer, minimum: 1 }
+                discountedPrice: { type: integer, minimum: 1 }
+                stock: { type: integer, minimum: 0 }
+                imageUrl: { type: string, nullable: true }
+                imageVariants:
+                  type: object
+                  nullable: true
+                  properties:
+                    thumb: { type: string }
+                    card: { type: string }
+                    full: { type: string }
+                storeName: { type: string, minLength: 1, maxLength: 200 }
+                storeAddress: { type: string, maxLength: 500 }
+                storeLat: { type: number, nullable: true }
+                storeLng: { type: number, nullable: true }
+                expiresAt: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [product]
+                properties:
+                  product: { $ref: '#/components/schemas/ProductResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /products/search:
+    get:
+      tags: [Products]
+      summary: Search products by keyword
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+          description: Search query.
+        - name: category
+          in: query
+          required: false
+          schema: { type: string, enum: [meals, bakery, drinks] }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductSearchResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /products/trending:
+    get:
+      tags: [Search]
+      summary: Trending search queries
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, maximum: 20, default: 8 }
+      responses:
+        '200':
+          description: Trending queries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrendingResponse'
+
+  /products/{id}:
+    get:
+      tags: [Products]
+      summary: Get a single product
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Product.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [product]
+                properties:
+                  product: { $ref: '#/components/schemas/ProductResponse' }
+        '404':
+          description: Product not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Produk tidak ditemukan", code: PRODUCT_NOT_FOUND }
+
+  /cart:
+    get:
+      tags: [Cart]
+      summary: Get current user's cart
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Cart with items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cart]
+                properties:
+                  cart: { $ref: '#/components/schemas/Cart' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [Cart]
+      summary: Clear the cart
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Cart cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Cart]
+      summary: Add item to cart
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId]
+              properties:
+                productId: { type: string, format: uuid }
+                quantity: { type: integer, minimum: 1, maximum: 99, default: 1 }
+      responses:
+        '200':
+          description: Updated cart.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cart]
+                properties:
+                  cart: { $ref: '#/components/schemas/Cart' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: Product not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Produk tidak ditemukan", code: PRODUCT_NOT_FOUND }
+        '409':
+          description: Insufficient stock.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Stok tidak mencukupi", code: INSUFFICIENT_STOCK }
+
+  /cart/items/{productId}:
+    parameters:
+      - name: productId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Cart]
+      summary: Update cart item quantity (0 removes it)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, minimum: 0, maximum: 99 }
+      responses:
+        '200':
+          description: Updated cart.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cart]
+                properties:
+                  cart: { $ref: '#/components/schemas/Cart' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: Cart item not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Item tidak ditemukan", code: ITEM_NOT_FOUND }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Cart]
+      summary: Remove cart item
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Updated cart.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cart]
+                properties:
+                  cart: { $ref: '#/components/schemas/Cart' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /orders:
+    get:
+      tags: [Orders]
+      summary: List current user's orders
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orders, total, page, limit, totalPages]
+                properties:
+                  orders:
+                    type: array
+                    items: { $ref: '#/components/schemas/Order' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  totalPages: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Orders]
+      summary: Create an order from the cart
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [buyerName, buyerPhone]
+              properties:
+                buyerName: { type: string, minLength: 1, maxLength: 100 }
+                buyerPhone: { type: string, minLength: 6, maxLength: 20 }
+                notes: { type: string, maxLength: 500 }
+                storeName: { type: string, maxLength: 100, description: For multi-store carts; restrict to one store. }
+      responses:
+        '201':
+          description: Order created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order]
+                properties:
+                  order: { $ref: '#/components/schemas/Order' }
+        '400':
+          description: Cart empty or validation error.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Keranjang kosong", code: CART_EMPTY }
+        '409':
+          description: Product unavailable or insufficient stock.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /orders/has-history:
+    get:
+      tags: [Orders]
+      summary: Whether current user has any past orders
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: History flag.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [hasHistory]
+                properties:
+                  hasHistory: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Orders]
+      summary: Get an order by id
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order]
+                properties:
+                  order: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: Order not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Pesanan tidak ditemukan", code: ORDER_NOT_FOUND }
+
+  /orders/{id}/verify-pickup:
+    post:
+      tags: [Orders]
+      summary: Verify pickup code
+      description: Confirms pickup by validating the LAST-XXXX code; sets status to PICKED_UP.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pickupCode]
+              properties:
+                pickupCode: { type: string, minLength: 1, maxLength: 20 }
+      responses:
+        '200':
+          description: Verified.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order, message]
+                properties:
+                  order: { $ref: '#/components/schemas/Order' }
+                  message: { type: string }
+        '400':
+          description: Invalid or expired pickup code.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { error: "Kode pickup salah", code: INVALID_PICKUP_CODE }
+                expired:
+                  value: { error: "Kode pickup kedaluwarsa", code: PICKUP_EXPIRED }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /orders/{id}/cancel-expired:
+    post:
+      tags: [Orders]
+      summary: Cancel an order whose pickup code expired
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Cancelled and stock restored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order, message]
+                properties:
+                  order: { $ref: '#/components/schemas/Order' }
+                  message: { type: string }
+        '400':
+          description: Pickup code not yet expired.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Kode pickup belum kedaluwarsa", code: NOT_EXPIRED }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /uploads:
+    post:
+      tags: [Uploads]
+      summary: Upload an image (returns processed variants)
+      description: Multipart/form-data with field `file`. Accepted image types jpeg/png/webp/avif, max 5MB. Returns thumb/card/full JPEG variants.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Uploaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: Missing file or upload failure.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { error: "File diperlukan", code: FILE_REQUIRED }
+                failed:
+                  value: { error: "Gagal mengunggah file", code: UPLOAD_ERROR }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /mitra/register:
+    post:
+      tags: [Mitra]
+      summary: Register as a Mitra (merchant)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [storeName]
+              properties:
+                storeName: { type: string, minLength: 1, maxLength: 200 }
+                storeDescription: { type: string, maxLength: 1000 }
+                storeAddress: { type: string, maxLength: 500 }
+                storeLat: { type: number, minimum: -90, maximum: 90, nullable: true }
+                storeLng: { type: number, minimum: -180, maximum: 180, nullable: true }
+      responses:
+        '201':
+          description: Mitra profile created (status PENDING).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { $ref: '#/components/schemas/MitraProfileResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /mitra/me:
+    get:
+      tags: [Mitra]
+      summary: Get own Mitra profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { $ref: '#/components/schemas/MitraProfileResponse' }
+        '404':
+          description: Mitra profile not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Profil mitra tidak ditemukan", code: MITRA_NOT_FOUND }
+    patch:
+      tags: [Mitra]
+      summary: Update own Mitra profile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                storeName: { type: string, minLength: 1, maxLength: 200 }
+                storeDescription: { type: string, maxLength: 1000, nullable: true }
+                storeAddress: { type: string, maxLength: 500, nullable: true }
+                storeLat: { type: number, minimum: -90, maximum: 90, nullable: true }
+                storeLng: { type: number, minimum: -180, maximum: 180, nullable: true }
+      responses:
+        '200':
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { $ref: '#/components/schemas/MitraProfileResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /mitra/me/location:
+    patch:
+      tags: [Mitra]
+      summary: Update store location (or geocode from address)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                lat: { type: number, minimum: -90, maximum: 90 }
+                lng: { type: number, minimum: -180, maximum: 180 }
+                address: { type: string, minLength: 1, maxLength: 500, description: "If provided without lat/lng, triggers geocoding." }
+      responses:
+        '200':
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { $ref: '#/components/schemas/MitraProfileResponse' }
+        '400':
+          description: Validation error or geocoding failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Gagal mendapatkan koordinat", code: GEOCODING_FAILED }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /mitra/products:
+    get:
+      tags: [Mitra]
+      summary: List own products (Mitra only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Products.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [products]
+                properties:
+                  products:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProductResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /mitra/products/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Mitra]
+      summary: Update a product (Mitra only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                description: { type: string, maxLength: 1000, nullable: true }
+                category: { type: string, enum: [meals, bakery, drinks] }
+                originalPrice: { type: integer, minimum: 1 }
+                discountedPrice: { type: integer, minimum: 1 }
+                stock: { type: integer, minimum: 0 }
+                imageUrl: { type: string, nullable: true }
+                imageVariants:
+                  type: object
+                  nullable: true
+                  properties:
+                    thumb: { type: string }
+                    card: { type: string }
+                    full: { type: string }
+                storeName: { type: string, minLength: 1, maxLength: 200 }
+                storeAddress: { type: string, maxLength: 500, nullable: true }
+                expiresAt: { type: string, format: date-time }
+                isActive: { type: boolean }
+      responses:
+        '200':
+          description: Updated product.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [product]
+                properties:
+                  product: { $ref: '#/components/schemas/ProductResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Mitra]
+      summary: Delete a product (Mitra only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          description: Product not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Produk tidak ditemukan", code: PRODUCT_NOT_FOUND }
+
+  /mitra/stats:
+    get:
+      tags: [Mitra]
+      summary: Mitra dashboard stats (Mitra only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Stats.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stats]
+                properties:
+                  stats: { $ref: '#/components/schemas/MitraStatsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /mitra/orders:
+    get:
+      tags: [Mitra]
+      summary: List orders containing the Mitra's products (Mitra only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Orders (not paginated).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orders]
+                properties:
+                  orders:
+                    type: array
+                    items: { $ref: '#/components/schemas/MitraOrder' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /mitra/orders/{id}/status:
+    patch:
+      tags: [Mitra]
+      summary: Update an order's status (Mitra only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [PROCESSED, READY, PICKED_UP, CANCELLED]
+      responses:
+        '200':
+          description: Updated order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order]
+                properties:
+                  order: { $ref: '#/components/schemas/MitraOrder' }
+        '400':
+          description: Invalid transition.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Transisi status tidak valid", code: INVALID_TRANSITION }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /mitra/analytics/export:
+    get:
+      tags: [Analytics]
+      summary: Export analytics as CSV
+      description: |
+        Authenticated via `Authorization: Bearer <token>` OR a `?token=<jwt>` query
+        parameter (for browser downloads). Returns text/csv attachment.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+        - name: token
+          in: query
+          required: false
+          description: JWT alternative to the Authorization header (for direct download).
+          schema: { type: string }
+      responses:
+        '200':
+          description: CSV file attachment.
+          content:
+            text/csv:
+              schema:
+                type: string
+                description: "Columns: Tanggal, Produk, Jumlah, Harga Satuan, Pendapatan, Hemat Pembeli, Pembeli, Status"
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /mitra/analytics/sales:
+    get:
+      tags: [Analytics]
+      summary: Sales trend over time (Mitra only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+        - name: granularity
+          in: query
+          required: false
+          schema: { type: string, enum: [daily, weekly, monthly], default: daily }
+      responses:
+        '200':
+          description: Sales trend.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [trend]
+                properties:
+                  trend:
+                    type: array
+                    items: { $ref: '#/components/schemas/SalesTrendEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /mitra/analytics/revenue:
+    get:
+      tags: [Analytics]
+      summary: Revenue summary (Mitra only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+      responses:
+        '200':
+          description: Revenue summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary]
+                properties:
+                  summary: { $ref: '#/components/schemas/RevenueSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /mitra/analytics/products:
+    get:
+      tags: [Analytics]
+      summary: Product performance ranking (Mitra only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+      responses:
+        '200':
+          description: Product performance.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [products]
+                properties:
+                  products:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProductPerformanceEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /mitra/analytics/peak-hours:
+    get:
+      tags: [Analytics]
+      summary: Hourly order distribution (Mitra only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+      responses:
+        '200':
+          description: 24 hourly buckets.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [hours]
+                properties:
+                  hours:
+                    type: array
+                    items: { $ref: '#/components/schemas/PeakHourEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /devices:
+    post:
+      tags: [Devices]
+      summary: Register an FCM device token
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, minLength: 1 }
+                platform: { type: string, enum: [web, ios, android] }
+      responses:
+        '201':
+          description: Device registered (or 200 if already existed).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device]
+                properties:
+                  device: { $ref: '#/components/schemas/Device' }
+        '200':
+          description: Existing device updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device]
+                properties:
+                  device: { $ref: '#/components/schemas/Device' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List current user's notifications
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: unread
+          in: query
+          required: false
+          description: 'Filter to unread only ("true"/"false").'
+          schema: { type: string, enum: ["true", "false"] }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: string, default: "50" }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: string, default: "0" }
+      responses:
+        '200':
+          description: Notifications + unread count.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notifications, unreadCount]
+                properties:
+                  notifications:
+                    type: array
+                    items: { $ref: '#/components/schemas/Notification' }
+                  unreadCount: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Mark a notification as read
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Updated notification.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notification]
+                properties:
+                  notification: { $ref: '#/components/schemas/Notification' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: Notification not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Notifikasi tidak ditemukan", code: NOTIFICATION_NOT_FOUND }
+
+  /wishlist-subscriptions:
+    get:
+      tags: [Wishlist]
+      summary: List wishlist subscription product IDs
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Subscribed product IDs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [productIds]
+                properties:
+                  productIds:
+                    type: array
+                    items: { type: string, format: uuid }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Wishlist]
+      summary: Subscribe to a product (idempotent)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId]
+              properties:
+                productId: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Subscription created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subscription]
+                properties:
+                  subscription: { $ref: '#/components/schemas/WishlistSubscription' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /wishlist-subscriptions/{productId}:
+    delete:
+      tags: [Wishlist]
+      summary: Unsubscribe from a product
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Unsubscribed.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /reviews/orders/{id}/review:
+    post:
+      tags: [Reviews]
+      summary: Review a picked-up order
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 1000 }
+                imageUrl: { type: string, format: uri }
+      responses:
+        '201':
+          description: Review created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [review]
+                properties:
+                  review: { $ref: '#/components/schemas/Review' }
+        '400':
+          description: Order not picked up, has no items, or invalid input.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already reviewed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "Pesanan sudah direview", code: DUPLICATE_REVIEW }
+
+  /reviews/products/{id}/reviews:
+    get:
+      tags: [Reviews]
+      summary: List reviews for a product
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/PageParam'
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Product reviews.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewListResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /reviews/mitra/{id}/reviews:
+    get:
+      tags: [Reviews]
+      summary: List reviews for a Mitra (user)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/PageParam'
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Mitra reviews.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewListResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /reviews/products/{id}/trust-badges:
+    get:
+      tags: [Reviews]
+      summary: Trust badges for a product
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Trust badges.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustBadgesResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Platform dashboard stats (Admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Dashboard stats.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboardStats'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List users (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam100'
+        - name: role
+          in: query
+          required: false
+          schema: { type: string, enum: [FOOD_SAVER, MITRA, ADMIN] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Paginated users.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users, total, page, limit, totalPages]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: '#/components/schemas/AdminUser' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  totalPages: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Admin]
+      summary: Get user detail (Admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: User detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserDetail'
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: User not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "User tidak ditemukan", code: USER_NOT_FOUND }
+    patch:
+      tags: [Admin]
+      summary: Update a user (Admin only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                phone: { type: string, maxLength: 20 }
+                isVerified: { type: boolean }
+      responses:
+        '200':
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, email, name, role, isVerified, createdAt]
+                properties:
+                  id: { type: string, format: uuid }
+                  email: { type: string }
+                  name: { type: string }
+                  phone: { type: string, nullable: true }
+                  role: { type: string }
+                  isVerified: { type: boolean }
+                  createdAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/products:
+    get:
+      tags: [Admin]
+      summary: List all products (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam100'
+        - name: isActive
+          in: query
+          required: false
+          schema: { type: string, enum: ["true", "false"] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Paginated products.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [products, total, page, limit, totalPages]
+                properties:
+                  products:
+                    type: array
+                    items: { $ref: '#/components/schemas/AdminProduct' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  totalPages: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/products/{id}:
+    patch:
+      tags: [Admin]
+      summary: Activate/deactivate a product (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isActive]
+              properties:
+                isActive: { type: boolean }
+      responses:
+        '200':
+          description: Updated product.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, name, isActive]
+                properties:
+                  id: { type: string, format: uuid }
+                  name: { type: string }
+                  isActive: { type: boolean }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/config:
+    get:
+      tags: [Admin]
+      summary: Get platform config (Admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Platform config.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformConfig'
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [Admin]
+      summary: Update platform config (Admin only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                commissionRate: { type: number }
+                maxPickupHours: { type: integer }
+                categories: { type: array, items: { type: string } }
+                featureFlags:
+                  type: object
+                  properties:
+                    reviewsEnabled: { type: boolean }
+                    mapsEnabled: { type: boolean }
+                    wishlistEnabled: { type: boolean }
+                supportPhone: { type: string }
+                termsUrl: { type: string }
+      responses:
+        '200':
+          description: Updated config.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformConfig'
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/mitra-verifications:
+    get:
+      tags: [Admin]
+      summary: List Mitra verification requests (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam100'
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+      responses:
+        '200':
+          description: Paginated verification profiles.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles, total, page, limit, totalPages]
+                properties:
+                  profiles:
+                    type: array
+                    items: { $ref: '#/components/schemas/AdminMitraVerification' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  totalPages: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/mitra-verifications/{id}:
+    patch:
+      tags: [Admin]
+      summary: Approve or reject a Mitra (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [VERIFIED, REJECTED]
+      responses:
+        '200':
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, storeName, verificationStatus, email]
+                properties:
+                  id: { type: string, format: uuid }
+                  storeName: { type: string }
+                  verificationStatus: { type: string, enum: [VERIFIED, REJECTED] }
+                  email: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
