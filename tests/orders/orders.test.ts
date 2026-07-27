@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { prisma } from '../setup.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
+import { xssPayloads, sqlInjection, longString, badUuids } from '../support/edgeCases.js';
 
 const app = createApp();
 
@@ -95,6 +96,143 @@ describe('Orders API', () => {
       });
 
       expect(res.status).toBe(401);
+    });
+
+    it('should reject missing buyerName', async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const res = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerPhone: '08123456789' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject empty buyerName', async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const res = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerName: '', buyerPhone: '08123456789' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject buyerName exceeding max length (100)', async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const res = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerName: longString(101), buyerPhone: '08123456789' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject missing buyerPhone', async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const res = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerName: 'Budi' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject buyerPhone too short (< 6)', async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const res = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerName: 'Budi', buyerPhone: '123' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject buyerPhone exceeding max length (20)', async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const res = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerName: 'Budi', buyerPhone: longString(21) });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject notes exceeding max length (500)', async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const res = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          buyerName: 'Budi',
+          buyerPhone: '08123456789',
+          notes: longString(501),
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should accept XSS-looking buyerName (output encoding, not input sanitization)', async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const res = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerName: xssPayloads[0], buyerPhone: '08123456789' });
+
+      expect(res.status).toBe(201);
+    });
+
+    it('should accept SQL-looking buyerName (Prisma parameterized queries prevent injection)', async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const res = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerName: sqlInjection[0], buyerPhone: '08123456789' });
+
+      expect(res.status).toBe(201);
     });
   });
 
@@ -370,6 +508,192 @@ describe('Orders API', () => {
     it('should return 401 without auth', async () => {
       const res = await request(app).post(`/orders/${orderId}/cancel-expired`);
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe('Route Param Validation', () => {
+    it('should reject malformed UUID for GET /orders/:id', async () => {
+      const res = await request(app)
+        .get('/orders/not-a-uuid')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject malformed UUID for POST /orders/:id/verify-pickup', async () => {
+      const res = await request(app)
+        .post('/orders/not-a-uuid/verify-pickup')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ pickupCode: 'LAST-TEST' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject malformed UUID for POST /orders/:id/cancel-expired', async () => {
+      // cancel-expired uses z.string().min(1) — bad UUID passes but service returns 404
+      const res = await request(app)
+        .post('/orders/not-a-uuid/cancel-expired')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ORDER_NOT_FOUND');
+    });
+  });
+
+  describe('IDOR - Cross-User Access', () => {
+    let otherAccessToken: string;
+    let otherOrderId: string;
+    let otherPickupCode: string;
+
+    beforeEach(async () => {
+      // Create User B (different from the beforeEach user A)
+      const otherUser = await prisma.user.create({
+        data: {
+          email: 'other-order@example.com',
+          name: 'Other User',
+          passwordHash: 'hash',
+          role: 'FOOD_SAVER',
+          isVerified: true,
+        },
+      });
+      otherAccessToken = signAccessToken({ userId: otherUser.id, email: otherUser.email });
+
+      // Create a cart and order for User B
+      const otherProduct = await prisma.product.create({
+        data: {
+          name: 'Other Product',
+          category: 'meals',
+          originalPrice: 10000,
+          discountedPrice: 5000,
+          stock: 5,
+          storeName: 'Warung Lain',
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+      });
+
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${otherAccessToken}`)
+        .send({ productId: otherProduct.id, quantity: 1 });
+
+      const createRes = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${otherAccessToken}`)
+        .send({ buyerName: 'Other', buyerPhone: '08111111111' });
+
+      otherOrderId = createRes.body.order.id;
+      otherPickupCode = createRes.body.order.pickupCode;
+    });
+
+    it('should return 404 when User A views User B order', async () => {
+      const res = await request(app)
+        .get(`/orders/${otherOrderId}`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ORDER_NOT_FOUND');
+    });
+
+    it('should return 404 when User A verifies User B pickup', async () => {
+      const res = await request(app)
+        .post(`/orders/${otherOrderId}/verify-pickup`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ pickupCode: otherPickupCode });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ORDER_NOT_FOUND');
+    });
+
+    it('should return 404 when User A cancels User B expired order', async () => {
+      // Manually expire the order
+      await prisma.order.update({
+        where: { id: otherOrderId },
+        data: { pickupExpiresAt: new Date(Date.now() - 3600000) },
+      });
+
+      const res = await request(app)
+        .post(`/orders/${otherOrderId}/cancel-expired`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ORDER_NOT_FOUND');
+    });
+  });
+
+  describe('Pagination Validation', () => {
+    it('should reject page=0', async () => {
+      const res = await request(app)
+        .get('/orders?page=0')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject negative page', async () => {
+      const res = await request(app)
+        .get('/orders?page=-1')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject limit=0', async () => {
+      const res = await request(app)
+        .get('/orders?limit=0')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject limit exceeding max (50)', async () => {
+      const res = await request(app)
+        .get('/orders?limit=51')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject negative limit', async () => {
+      const res = await request(app)
+        .get('/orders?limit=-5')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('Verify Pickup - Missing pickupCode', () => {
+    let orderId: string;
+
+    beforeEach(async () => {
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 1 });
+
+      const createRes = await request(app)
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ buyerName: 'Budi', buyerPhone: '08123456789' });
+
+      orderId = createRes.body.order.id;
+    });
+
+    it('should reject missing pickupCode in body', async () => {
+      const res = await request(app)
+        .post(`/orders/${orderId}/verify-pickup`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
     });
   });
 });

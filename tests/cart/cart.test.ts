@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { prisma } from '../setup.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
+import { longString } from '../support/edgeCases.js';
 
 const app = createApp();
 
@@ -13,6 +14,8 @@ describe('Cart API', () => {
   let secondProductId: string;
 
   beforeEach(async () => {
+    await prisma.orderItem.deleteMany();
+    await prisma.order.deleteMany();
     await prisma.cartItem.deleteMany();
     await prisma.cart.deleteMany();
     await prisma.product.deleteMany();
@@ -227,6 +230,261 @@ describe('Cart API', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Keranjang dikosongkan');
+    });
+  });
+
+  describe('POST /cart - Input Validation', () => {
+    it('should reject negative quantity', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: -1 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject zero quantity', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 0 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject float quantity', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 2.5 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject quantity exceeding maximum (99)', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 100 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should accept quantity at boundary maximum (99)', async () => {
+      // Product with enough stock for the boundary test
+      const highStockProduct = await prisma.product.create({
+        data: {
+          name: 'High Stock Item',
+          category: 'meals',
+          originalPrice: 10000,
+          discountedPrice: 5000,
+          stock: 100,
+          storeName: 'Warung Test',
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+      });
+
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId: highStockProduct.id, quantity: 99 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.cart.items[0].quantity).toBe(99);
+    });
+
+    it('should reject missing productId', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ quantity: 2 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject malformed UUID as productId', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId: 'not-a-uuid', quantity: 2 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject empty body', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject SQL injection in productId', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId: "' OR '1'='1", quantity: 1 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should accept valid productId with default quantity', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId });
+
+      expect(res.status).toBe(200);
+      expect(res.body.cart.items[0].quantity).toBe(1);
+    });
+  });
+
+  describe('PATCH /cart/items/:productId - Input Validation', () => {
+    beforeEach(async () => {
+      // Ensure item exists in cart for patch tests
+      await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId, quantity: 3 });
+    });
+
+    it('should reject negative quantity', async () => {
+      const res = await request(app)
+        .patch(`/cart/items/${productId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ quantity: -1 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject float quantity', async () => {
+      const res = await request(app)
+        .patch(`/cart/items/${productId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ quantity: 2.5 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject quantity exceeding maximum (99)', async () => {
+      const res = await request(app)
+        .patch(`/cart/items/${productId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ quantity: 100 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject missing quantity field', async () => {
+      const res = await request(app)
+        .patch(`/cart/items/${productId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject malformed UUID in route param', async () => {
+      const res = await request(app)
+        .patch('/cart/items/not-a-uuid')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ quantity: 2 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('DELETE /cart/items/:productId - Input Validation', () => {
+    it('should reject malformed UUID in route param', async () => {
+      const res = await request(app)
+        .delete('/cart/items/not-a-uuid')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('Business Rules', () => {
+    it('should return 404 for inactive product', async () => {
+      const inactiveProduct = await prisma.product.create({
+        data: {
+          name: 'Inactive Product',
+          category: 'meals',
+          originalPrice: 10000,
+          discountedPrice: 5000,
+          stock: 5,
+          storeName: 'Warung Test',
+          expiresAt: new Date(Date.now() + 86400000),
+          isActive: false,
+        },
+      });
+
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ productId: inactiveProduct.id, quantity: 1 });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('PRODUCT_NOT_FOUND');
+    });
+  });
+
+  describe('Auth - Malformed Tokens', () => {
+    const invalidTokens = [
+      'Bearer invalid-token',
+      'Bearer ',
+      'Bearer',
+      'NotBearer token',
+      '',
+    ];
+
+    it('should return 401 with malformed token on GET /cart', async () => {
+      const res = await request(app)
+        .get('/cart')
+        .set('Authorization', `Bearer some-invalid-jwt`);
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 with malformed token on POST /cart', async () => {
+      const res = await request(app)
+        .post('/cart')
+        .set('Authorization', `Bearer some-invalid-jwt`)
+        .send({ productId, quantity: 1 });
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 with malformed token on PATCH /cart/items/:id', async () => {
+      const res = await request(app)
+        .patch(`/cart/items/${productId}`)
+        .set('Authorization', `Bearer some-invalid-jwt`)
+        .send({ quantity: 2 });
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 with malformed token on DELETE /cart/items/:id', async () => {
+      const res = await request(app)
+        .delete(`/cart/items/${productId}`)
+        .set('Authorization', `Bearer some-invalid-jwt`);
+
+      expect(res.status).toBe(401);
     });
   });
 });

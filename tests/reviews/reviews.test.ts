@@ -4,6 +4,7 @@ import { signAccessToken } from '../../src/lib/jwt.js';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { createReviewSchema, reviewQuerySchema } from '../../src/validators/reviews.js';
+import { xssPayloads } from '../support/edgeCases.js';
 
 const app = createApp();
 
@@ -66,6 +67,53 @@ describe('Review Validation', () => {
       const result = createReviewSchema.safeParse({
         rating: 3,
         comment: 'x'.repeat(1000),
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject float rating', () => {
+      const result = createReviewSchema.safeParse({ rating: 3.5 });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject negative rating', () => {
+      const result = createReviewSchema.safeParse({ rating: -1 });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject missing rating field', () => {
+      const result = createReviewSchema.safeParse({ comment: 'ok' });
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept XSS in comment (output encoding handles XSS, not input sanitization)', () => {
+      const result = createReviewSchema.safeParse({
+        rating: 3,
+        comment: xssPayloads[0],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept whitespace-only comment', () => {
+      const result = createReviewSchema.safeParse({
+        rating: 3,
+        comment: '   ',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject empty imageUrl string', () => {
+      const result = createReviewSchema.safeParse({
+        rating: 3,
+        imageUrl: '',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept imageUrl with query params', () => {
+      const result = createReviewSchema.safeParse({
+        rating: 3,
+        imageUrl: 'https://example.com/img.jpg?w=800&h=600',
       });
       expect(result.success).toBe(true);
     });
@@ -246,6 +294,61 @@ describe('Review API', () => {
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('VALIDATION_ERROR');
     });
+
+    it('should return 404 when reviewing another user order (IDOR)', async () => {
+      const otherUser = await prisma.user.create({
+        data: {
+          email: 'other-review@example.com',
+          name: 'Other',
+          passwordHash: 'hash',
+          role: 'FOOD_SAVER',
+          isVerified: true,
+        },
+      });
+      const otherToken = signAccessToken({ userId: otherUser.id, email: otherUser.email });
+
+      const otherOrder = await prisma.order.create({
+        data: {
+          userId: otherUser.id,
+          storeName: 'Warung Test',
+          status: 'PICKED_UP',
+          pickupCode: 'LAST-OTHER',
+          pickupExpiresAt: new Date(Date.now() + 7200000),
+          totalAmount: 15000,
+          savingAmount: 10000,
+          buyerName: 'Other',
+          buyerPhone: '08999999999',
+          items: {
+            create: {
+              productId,
+              name: 'Test Nasi Goreng',
+              storeName: 'Warung Test',
+              price: 15000,
+              originalPrice: 25000,
+              quantity: 1,
+            },
+          },
+        },
+      });
+
+      // User A (original) tries to review User B's order
+      const res = await request(app)
+        .post(`/reviews/orders/${otherOrder.id}/review`)
+        .set('Authorization', `Bearer ${userAccessToken}`)
+        .send({ rating: 5 });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ORDER_NOT_FOUND');
+    });
+
+    it('should return 401 with malformed token', async () => {
+      const res = await request(app)
+        .post(`/reviews/orders/${orderId}/review`)
+        .set('Authorization', 'Bearer some-garbage-token')
+        .send({ rating: 3 });
+
+      expect(res.status).toBe(401);
+    });
   });
 
   describe('GET /products/:id/reviews', () => {
@@ -259,6 +362,18 @@ describe('Review API', () => {
       expect(res.body.pagination.total).toBe(0);
       expect(res.body.avgRating).toBeNull();
       expect(res.body.ratingDistribution).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
+    });
+
+    it('should return empty reviews for non-existent product', async () => {
+      const fakeProductId = '00000000-0000-0000-0000-000000000000';
+      const res = await request(app)
+        .get(`/reviews/products/${fakeProductId}/reviews`)
+        .set('Authorization', `Bearer ${userAccessToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.reviews).toEqual([]);
+      expect(res.body.pagination.total).toBe(0);
+      expect(res.body.avgRating).toBeNull();
     });
 
     it('should return reviews with pagination and avg rating', async () => {

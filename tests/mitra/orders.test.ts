@@ -186,5 +186,65 @@ describe('Mitra Orders API', () => {
 
       expect(res.status).toBe(401);
     });
+
+    it('should reject malformed UUID in route param', async () => {
+      const res = await request(app)
+        .patch('/mitra/orders/not-a-uuid/status')
+        .set('Authorization', `Bearer ${mitraAccessToken}`)
+        .send({ status: 'PROCESSED' });
+
+      // Route validates UUID param → 400 for invalid format
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject missing status field', async () => {
+      const res = await request(app)
+        .patch(`/mitra/orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${mitraAccessToken}`)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject invalid status value', async () => {
+      const res = await request(app)
+        .patch(`/mitra/orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${mitraAccessToken}`)
+        .send({ status: 'INVALID_STATUS' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('IDOR - Other Mitra Access', () => {
+    it('should return 404 when another mitra tries to update order status', async () => {
+      const otherMitra = await prisma.user.create({
+        data: {
+          email: 'other-mitra-ord@example.com',
+          name: 'Other Mitra',
+          passwordHash: 'hash',
+          role: 'MITRA',
+          isVerified: true,
+          mitraProfile: {
+            create: {
+              storeName: 'Toko Lain',
+              verificationStatus: 'VERIFIED',
+            },
+          },
+        },
+      });
+      const otherMitraToken = signAccessToken({ userId: otherMitra.id, email: otherMitra.email });
+
+      const res = await request(app)
+        .patch(`/mitra/orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${otherMitraToken}`)
+        .send({ status: 'PROCESSED' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ORDER_NOT_FOUND');
+    });
   });
 });
