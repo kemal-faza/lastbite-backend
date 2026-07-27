@@ -7,5 +7,8 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     testTimeout: 15000,
     fileParallelism: false,
+    env: {
+      AUTH_RATE_LIMIT_MAX: '200',
+    },
   },
 });
