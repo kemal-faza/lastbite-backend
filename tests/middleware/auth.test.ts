@@ -173,4 +173,63 @@ describe('requireAdmin middleware', () => {
       .set('Authorization', `Bearer ${adminUser.accessTokenNoRole}`);
     expect(res.status).toBe(200);
   });
+
+  it('should return 401 for non-Bearer auth header', async () => {
+    const res = await request(app)
+      .get('/users/me')
+      .set('Authorization', 'Basic dGVzdDpwYXNz');
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('UNAUTHORIZED');
+  });
+
+  it('should return 401 for malformed Bearer header (no token)', async () => {
+    const res = await request(app)
+      .get('/users/me')
+      .set('Authorization', 'Bearer');
+    expect(res.status).toBe(401);
+  });
+
+  it('should return 403 for deleted user with valid JWT (requireMitra)', async () => {
+    // Create a mitra, get its token, then delete the user
+    const tempUser = await prisma.user.create({
+      data: {
+        email: `temp-mitra-${Date.now()}@test.com`,
+        name: 'Temp Mitra',
+        passwordHash,
+        role: 'MITRA',
+        isVerified: true,
+      },
+    });
+    await prisma.mitraProfile.create({
+      data: { userId: tempUser.id, storeName: 'Temp Store', verificationStatus: 'VERIFIED' },
+    });
+    const tempToken = signAccessToken({ userId: tempUser.id, email: tempUser.email });
+    // Delete the user so the DB fallback path fails
+    await prisma.user.delete({ where: { id: tempUser.id } });
+    // mitraProfile cascade-deletes with user
+
+    const res = await request(app)
+      .get('/mitra/stats')
+      .set('Authorization', `Bearer ${tempToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('should return 403 for deleted user with valid JWT (requireAdmin)', async () => {
+    const tempUser = await prisma.user.create({
+      data: {
+        email: `temp-admin-${Date.now()}@test.com`,
+        name: 'Temp Admin',
+        passwordHash,
+        role: 'ADMIN',
+        isVerified: true,
+      },
+    });
+    const tempToken = signAccessToken({ userId: tempUser.id, email: tempUser.email });
+    await prisma.user.delete({ where: { id: tempUser.id } });
+
+    const res = await request(app)
+      .get('/admin/dashboard')
+      .set('Authorization', `Bearer ${tempToken}`);
+    expect(res.status).toBe(403);
+  });
 });

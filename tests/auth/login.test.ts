@@ -64,6 +64,38 @@ describe('POST /auth/login', () => {
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('ACCOUNT_NOT_VERIFIED');
   });
+
+  it('should return 400 for missing email', async () => {
+    const res = await request(app)
+      .post('/auth/login')
+      .send({ password: 'password123' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for missing password', async () => {
+    const res = await request(app)
+      .post('/auth/login')
+      .send({ email: 'verified@example.com' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for invalid email format', async () => {
+    const res = await request(app)
+      .post('/auth/login')
+      .send({ email: 'not-an-email', password: 'password123' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should login with case-insensitive email', async () => {
+    const res = await request(app)
+      .post('/auth/login')
+      .send({ email: 'Verified@Example.com', password: 'password123' });
+    expect(res.status).toBe(200);
+    expect(res.body.tokens.accessToken).toBeDefined();
+  });
 });
 
 describe('POST /auth/refresh', () => {

@@ -86,4 +86,89 @@ describe('POST /auth/register', () => {
 
     expect(res.status).toBe(400);
   });
+
+  it('should return 400 for missing email', async () => {
+    const res = await request(app)
+      .post('/auth/register')
+      .send({ name: 'Test', password: 'password123' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for missing name', async () => {
+    const res = await request(app)
+      .post('/auth/register')
+      .send({ email: 'missing-name@example.com', password: 'password123' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for missing password', async () => {
+    const res = await request(app)
+      .post('/auth/register')
+      .send({ email: 'missing-pw@example.com', name: 'Test' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should detect case-insensitive duplicate email', async () => {
+    await request(app).post('/auth/register').send({
+      email: 'case-demo@example.com',
+      name: 'First',
+      password: 'password123',
+    });
+
+    const res = await request(app).post('/auth/register').send({
+      email: 'Case-Demo@Example.com',
+      name: 'Second',
+      password: 'password123',
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('EMAIL_EXISTS');
+  });
+
+  it('should accept name at maximum length (100 chars)', async () => {
+    const res = await request(app)
+      .post('/auth/register')
+      .send({
+        email: 'longname@example.com',
+        name: 'A'.repeat(100),
+        password: 'password123',
+      });
+    expect(res.status).toBe(201);
+  });
+
+  it('should reject name over 100 characters', async () => {
+    const res = await request(app)
+      .post('/auth/register')
+      .send({
+        email: 'toolongname@example.com',
+        name: 'A'.repeat(101),
+        password: 'password123',
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it('should accept password at minimum length (8 chars)', async () => {
+    const res = await request(app)
+      .post('/auth/register')
+      .send({
+        email: 'shortpw@example.com',
+        name: 'Test',
+        password: 'aB3$eX9!',
+      });
+    expect(res.status).toBe(201);
+  });
+
+  it('should reject password over 128 characters', async () => {
+    const res = await request(app)
+      .post('/auth/register')
+      .send({
+        email: 'over128pw@example.com',
+        name: 'Test',
+        password: 'A'.repeat(129),
+      });
+    expect(res.status).toBe(400);
+  });
 });

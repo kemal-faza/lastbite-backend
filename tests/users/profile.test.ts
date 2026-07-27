@@ -95,4 +95,64 @@ describe('PATCH /users/me', () => {
       .send({ name: 'No Auth' });
     expect(res.status).toBe(401);
   });
+
+  it('should return 400 for empty name', async () => {
+    const res = await request(app)
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ name: '' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should reject name over 100 characters', async () => {
+    const res = await request(app)
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ name: 'A'.repeat(101) });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should accept name at exactly 100 characters', async () => {
+    const res = await request(app)
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ name: 'A'.repeat(100) });
+    expect(res.status).toBe(200);
+    expect(res.body.user.name).toBe('A'.repeat(100));
+  });
+
+  it('should return 400 for too-short phone', async () => {
+    const res = await request(app)
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ phone: '123' });
+    expect(res.status).toBe(400);
+  });
+
+  it('should return 400 for empty phone', async () => {
+    const res = await request(app)
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ phone: '' });
+    expect(res.status).toBe(400);
+  });
+
+  it('should unset phone when sending existing phone', async () => {
+    // First set phone
+    await request(app)
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ phone: '08123456789' });
+
+    // Remove phone by not sending it
+    const res = await request(app)
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ name: 'Updated' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.user.phone).toBe('08123456789'); // Phone should remain unchanged
+  });
 });

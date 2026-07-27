@@ -88,6 +88,47 @@ describe('POST /auth/verify-otp', () => {
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
   });
+
+  it('should return 400 for malformed OTP code (non-numeric)', async () => {
+    const res = await request(app)
+      .post('/auth/verify-otp')
+      .send({ email: 'pending@example.com', code: 'abcdef' });
+    // Validator: string().length(6) — "abcdef" is length 6, so it passes validation.
+    // But the OTP is always numeric, so it should fail verification.
+    expect(res.status).toBe(400);
+  });
+
+  it('should return 400 for too-short OTP code', async () => {
+    const res = await request(app)
+      .post('/auth/verify-otp')
+      .send({ email: 'pending@example.com', code: '123' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for too-long OTP code', async () => {
+    const res = await request(app)
+      .post('/auth/verify-otp')
+      .send({ email: 'pending@example.com', code: '1234567' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for missing code', async () => {
+    const res = await request(app)
+      .post('/auth/verify-otp')
+      .send({ email: 'pending@example.com' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for missing email', async () => {
+    const res = await request(app)
+      .post('/auth/verify-otp')
+      .send({ code: '123456' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
 });
 
 describe('POST /auth/resend-otp', () => {
@@ -124,5 +165,25 @@ describe('POST /auth/resend-otp', () => {
       .send({ email: 'unknown@example.com' });
 
     expect(res.status).toBe(404);
+  });
+
+  it('should return 400 for already-verified user resend', async () => {
+    await prisma.user.create({
+      data: {
+        email: 'already-verified-resend@example.com',
+        name: 'Verified',
+        passwordHash: await hashPassword('password123'),
+        isVerified: true,
+        verificationCode: null,
+        verificationCodeExpiresAt: null,
+      },
+    });
+
+    const res = await request(app)
+      .post('/auth/resend-otp')
+      .send({ email: 'already-verified-resend@example.com' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('ALREADY_VERIFIED');
   });
 });
