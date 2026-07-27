@@ -145,12 +145,14 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     });
 
     // Decrement stock for all items
-    for (const item of checkoutItems) {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { stock: { decrement: item.quantity } },
-      });
-    }
+    await Promise.all(
+      checkoutItems.map((item) =>
+        tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { decrement: item.quantity } },
+        })
+      )
+    );
 
     // Remove only the checked-out items, keep items from other stores
     await tx.cartItem.deleteMany({
@@ -237,28 +239,29 @@ export async function getOrderById(userId: string, orderId: string) {
 }
 
 export async function cancelExpiredOrder(userId: string, orderId: string) {
-  const order = await prisma.order.findFirst({
-    where: { id: orderId, userId },
-    include: { items: true },
-  });
+  // All checks inside the transaction to eliminate TOCTOU race.
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findFirst({
+      where: { id: orderId, userId },
+      include: { items: true },
+    });
 
-  if (!order) {
-    throw new OrderError('Pesanan tidak ditemukan', 'ORDER_NOT_FOUND');
-  }
+    if (!order) {
+      throw new OrderError('Pesanan tidak ditemukan', 'ORDER_NOT_FOUND');
+    }
 
-  if (order.status === 'PICKED_UP') {
-    throw new OrderError('Pesanan sudah diambil', 'INVALID_STATUS');
-  }
-  if (order.status === 'CANCELLED') {
-    throw new OrderError('Pesanan sudah dibatalkan', 'INVALID_STATUS');
-  }
+    if (order.status === 'PICKED_UP') {
+      throw new OrderError('Pesanan sudah diambil', 'INVALID_STATUS');
+    }
+    if (order.status === 'CANCELLED') {
+      throw new OrderError('Pesanan sudah dibatalkan', 'INVALID_STATUS');
+    }
 
-  // CRITICAL: only allow cancel if actually expired
-  if (new Date() <= order.pickupExpiresAt) {
-    throw new OrderError('Kode pickup belum kedaluwarsa', 'NOT_EXPIRED');
-  }
+    // CRITICAL: only allow cancel if actually expired
+    if (new Date() <= order.pickupExpiresAt) {
+      throw new OrderError('Kode pickup belum kedaluwarsa', 'NOT_EXPIRED');
+    }
 
-  const updatedOrder = await prisma.$transaction(async (tx) => {
     const updated = await tx.order.update({
       where: { id: orderId },
       data: { status: 'CANCELLED' },
@@ -266,18 +269,22 @@ export async function cancelExpiredOrder(userId: string, orderId: string) {
     });
 
     // Restore stock for each item
-    for (const item of order.items) {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { stock: { increment: item.quantity } },
-      });
-    }
+    await Promise.all(
+      order.items.map((item) =>
+        tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } },
+        })
+      )
+    );
 
-    return updated;
+    return { updated, items: order.items };
   });
 
-  // Find affected mitras
-  const productIds = order.items.map((i) => i.productId);
+  const { updated: updatedOrder, items } = result;
+
+  // Find affected mitras (outside transaction — side-effect only)
+  const productIds = items.map((i) => i.productId);
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
     select: { id: true, mitraId: true },

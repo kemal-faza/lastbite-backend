@@ -55,8 +55,15 @@ const orderListQuerySchema = z.object({
 
 ordersRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const params = orderListQuerySchema.parse(req.query);
-    const result = await getUserOrders(req.user!.userId, params.page, params.limit);
+    const parsed = orderListQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: parsed.error.errors.map((e) => e.message).join(', '),
+        code: 'VALIDATION_ERROR',
+      });
+      return;
+    }
+    const result = await getUserOrders(req.user!.userId, parsed.data.page, parsed.data.limit);
     res.json(result);
   } catch (err) {
     next(err);

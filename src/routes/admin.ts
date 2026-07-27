@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import { z } from 'zod';
 import { requireAdmin } from '../middleware/auth.js';
 import { createAuditLog } from '../services/auditLogService.js';
 import { listMitraVerifications, verifyMitra } from '../services/adminMitraService.js';
@@ -15,106 +16,215 @@ adminRouter.use(requireAdmin);
 
 // ---- Dashboard ----
 
-adminRouter.get('/dashboard', async (_req, res) => {
-  const stats = await getDashboardStats();
-  res.json(stats);
+adminRouter.get('/dashboard', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const stats = await getDashboardStats();
+    res.json(stats);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ---- User Management ----
 
-adminRouter.get('/users', async (req, res) => {
-  const query = paginationSchema.parse(req.query);
-  const role = req.query.role as import('@prisma/client').UserRole | undefined;
-  const search = req.query.search as string | undefined;
-  const result = await listUsers({ role, search, page: query.page, limit: query.limit });
-  res.json(result);
+adminRouter.get('/users', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = paginationSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: parsed.error.errors.map((e) => e.message).join(', '),
+        code: 'VALIDATION_ERROR',
+      });
+      return;
+    }
+    const role = req.query.role as import('@prisma/client').UserRole | undefined;
+    const search = req.query.search as string | undefined;
+    const result = await listUsers({ role, search, page: parsed.data.page, limit: parsed.data.limit });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
 });
 
-adminRouter.get('/users/:id', async (req, res) => {
-  const user = await getUserDetail(req.params.id);
-  res.json(user);
+adminRouter.get('/users/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const idParsed = z.string().uuid().safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: 'ID pengguna tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
+    const user = await getUserDetail(idParsed.data);
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
 });
 
-adminRouter.patch('/users/:id', async (req, res) => {
-  const data = userUpdateSchema.parse(req.body);
-  const user = await updateUser(req.params.id, data);
+adminRouter.patch('/users/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const idParsed = z.string().uuid().safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: 'ID pengguna tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
+    const bodyParsed = userUpdateSchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: bodyParsed.error.errors.map((e) => e.message).join(', '),
+        code: 'VALIDATION_ERROR',
+      });
+      return;
+    }
 
-  await createAuditLog({
-    actorId: req.user!.userId,
-    action: 'user.edit',
-    entity: 'user',
-    entityId: req.params.id,
-    details: data,
-  });
+    const user = await updateUser(idParsed.data, bodyParsed.data);
 
-  res.json(user);
+    await createAuditLog({
+      actorId: req.user!.userId,
+      action: 'user.edit',
+      entity: 'user',
+      entityId: idParsed.data,
+      details: bodyParsed.data,
+    });
+
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ---- Product Moderation ----
 
-adminRouter.get('/products', async (req, res) => {
-  const query = paginationSchema.parse(req.query);
-  const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
-  const search = req.query.search as string | undefined;
-  const result = await listAllProducts({ isActive, search, page: query.page, limit: query.limit });
-  res.json(result);
+adminRouter.get('/products', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = paginationSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: parsed.error.errors.map((e) => e.message).join(', '),
+        code: 'VALIDATION_ERROR',
+      });
+      return;
+    }
+    const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+    const search = req.query.search as string | undefined;
+    const result = await listAllProducts({ isActive, search, page: parsed.data.page, limit: parsed.data.limit });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
 });
 
-adminRouter.patch('/products/:id', async (req, res) => {
-  const { isActive } = req.body;
-  const result = await toggleProduct(req.params.id, isActive);
+const toggleProductSchema = z.object({
+  isActive: z.boolean(),
+});
 
-  await createAuditLog({
-    actorId: req.user!.userId,
-    action: isActive ? 'product.activate' : 'product.deactivate',
-    entity: 'product',
-    entityId: req.params.id,
-    details: { name: result.name },
-  });
+adminRouter.patch('/products/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const idParsed = z.string().uuid().safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: 'ID produk tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
+    const bodyParsed = toggleProductSchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: bodyParsed.error.errors.map((e) => e.message).join(', '),
+        code: 'VALIDATION_ERROR',
+      });
+      return;
+    }
 
-  res.json(result);
+    const result = await toggleProduct(idParsed.data, bodyParsed.data.isActive);
+
+    await createAuditLog({
+      actorId: req.user!.userId,
+      action: bodyParsed.data.isActive ? 'product.activate' : 'product.deactivate',
+      entity: 'product',
+      entityId: idParsed.data,
+      details: { name: result.name },
+    });
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ---- Platform Config ----
 
-adminRouter.get('/config', async (_req, res) => {
-  const config = await getConfig();
-  res.json(config);
+adminRouter.get('/config', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const config = await getConfig();
+    res.json(config);
+  } catch (err) {
+    next(err);
+  }
 });
 
-adminRouter.patch('/config', async (req, res) => {
-  const config = await updatePlatformConfig(req.body, req.user!.userId);
+adminRouter.patch('/config', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const config = await updatePlatformConfig(req.body, req.user!.userId);
 
-  await createAuditLog({
-    actorId: req.user!.userId,
-    action: 'config.update',
-    entity: 'platform_config',
-    details: req.body,
-  });
+    await createAuditLog({
+      actorId: req.user!.userId,
+      action: 'config.update',
+      entity: 'platform_config',
+      details: req.body,
+    });
 
-  res.json(config);
+    res.json(config);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ---- Mitra Verification ----
 
-adminRouter.get('/mitra-verifications', async (req, res) => {
-  const query = paginationSchema.parse(req.query);
-  const status = req.query.status as 'PENDING' | 'VERIFIED' | 'REJECTED' | undefined;
-  const result = await listMitraVerifications({ status, page: query.page, limit: query.limit });
-  res.json(result);
+adminRouter.get('/mitra-verifications', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = paginationSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: parsed.error.errors.map((e) => e.message).join(', '),
+        code: 'VALIDATION_ERROR',
+      });
+      return;
+    }
+    const status = req.query.status as 'PENDING' | 'VERIFIED' | 'REJECTED' | undefined;
+    const result = await listMitraVerifications({ status, page: parsed.data.page, limit: parsed.data.limit });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
 });
 
-adminRouter.patch('/mitra-verifications/:id', async (req, res) => {
-  const { status } = verifyMitraSchema.parse(req.body);
-  const result = await verifyMitra(req.params.id, status, req.user!.userId);
+adminRouter.patch('/mitra-verifications/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const idParsed = z.string().uuid().safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: 'ID verifikasi tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
+    const bodyParsed = verifyMitraSchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: bodyParsed.error.errors.map((e) => e.message).join(', '),
+        code: 'VALIDATION_ERROR',
+      });
+      return;
+    }
 
-  await createAuditLog({
-    actorId: req.user!.userId,
-    action: status === 'VERIFIED' ? 'mitra.verify.approve' : 'mitra.verify.reject',
-    entity: 'mitra_profile',
-    entityId: req.params.id,
-    details: { storeName: result.storeName, newStatus: status },
-  });
+    const result = await verifyMitra(idParsed.data, bodyParsed.data.status, req.user!.userId);
 
-  res.json(result);
+    await createAuditLog({
+      actorId: req.user!.userId,
+      action: bodyParsed.data.status === 'VERIFIED' ? 'mitra.verify.approve' : 'mitra.verify.reject',
+      entity: 'mitra_profile',
+      entityId: idParsed.data,
+      details: { storeName: result.storeName, newStatus: bodyParsed.data.status },
+    });
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
 });

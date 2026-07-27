@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { createSubscriptionSchema } from '../validators/wishlist-subscriptions.js';
 import { prisma } from '../lib/prisma.js';
@@ -37,8 +38,13 @@ wishlistSubscriptionsRouter.post('/', async (req: Request, res: Response, next: 
 
 wishlistSubscriptionsRouter.delete('/:productId', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const productIdParsed = z.string().uuid().safeParse(req.params.productId);
+    if (!productIdParsed.success) {
+      res.status(400).json({ error: 'ID produk tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
     await prisma.wishlistSubscription.deleteMany({
-      where: { userId: req.user!.userId, productId: String(req.params.productId) },
+      where: { userId: req.user!.userId, productId: productIdParsed.data },
     });
     res.status(204).end();
   } catch (err) {

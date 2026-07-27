@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { z } from 'zod';
 import { requireAuth, requireMitra } from '../middleware/auth.js';
 import { registerMitra, getMitraProfile, updateMitraProfile, updateMitraLocation, MitraError } from '../services/mitraService.js';
 import { getMitraProducts, updateMitraProduct, deleteMitraProduct, MitraProductError } from '../services/mitraProductService.js';
@@ -117,8 +118,12 @@ mitraRouter.patch('/products/:id', requireMitra, async (req: Request, res: Respo
       return;
     }
 
-    const productId = req.params.id as string;
-    const product = await updateMitraProduct(req.user!.userId, productId, parsed.data);
+    const idParsed = z.string().uuid().safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: 'ID produk tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
+    const product = await updateMitraProduct(req.user!.userId, idParsed.data, parsed.data);
     res.json({ product });
   } catch (err) {
     if (err instanceof MitraProductError) {
@@ -132,8 +137,12 @@ mitraRouter.patch('/products/:id', requireMitra, async (req: Request, res: Respo
 // DELETE /mitra/products/:id - Soft-delete own product
 mitraRouter.delete('/products/:id', requireMitra, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const productId = req.params.id as string;
-    await deleteMitraProduct(req.user!.userId, productId);
+    const idParsed = z.string().uuid().safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: 'ID produk tidak valid', code: 'VALIDATION_ERROR' });
+      return;
+    }
+    await deleteMitraProduct(req.user!.userId, idParsed.data);
     res.status(204).end();
   } catch (err) {
     if (err instanceof MitraProductError) {

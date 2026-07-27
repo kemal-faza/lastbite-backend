@@ -137,12 +137,14 @@ export async function updateOrderStatus(
         data: { status: 'CANCELLED' },
       });
 
-      for (const item of order.items) {
-        await tx.product.updateMany({
-          where: { id: item.productId, mitraId },
-          data: { stock: { increment: item.quantity } },
-        });
-      }
+      await Promise.all(
+        order.items.map((item) =>
+          tx.product.updateMany({
+            where: { id: item.productId, mitraId },
+            data: { stock: { increment: item.quantity } },
+          })
+        )
+      );
     });
 
     await notifyOrderStatusChange(order.userId, orderId, 'CANCELLED');
