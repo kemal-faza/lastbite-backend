@@ -1,0 +1,13 @@
+-- Recreate the GIN index for full-text search on products.searchVector.
+--
+-- Root cause: the add_mitra_profiles migration dropped "products_search_idx" (a stale
+-- auto-generated artifact that also dropped the searchVector column), and the subsequent
+-- add_search_vector_back migration only restored the column -- not the index.
+--
+-- The trigger (products_search_vector_trigger) and function (products_search_vector_update)
+-- survived, so searchVector is still populated; only the index was missing. This caused
+-- src/services/productService.ts full-text queries (p."searchVector" @@ plainto_tsquery(...))
+-- to fall back to a sequential scan.
+--
+-- No backfill needed: searchVector is already maintained by the trigger and is fully populated.
+CREATE INDEX IF NOT EXISTS products_search_idx ON "products" USING GIN ("searchVector");
