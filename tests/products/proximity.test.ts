@@ -10,7 +10,13 @@ const MONAS_LAT = -6.1754;
 const MONAS_LNG = 106.8272;
 
 describe('GET /products -- proximity search', () => {
+  let proximityUserId: string;
+
   beforeEach(async () => {
+    // Ensure clean state for this test group
+    await prisma.product.deleteMany();
+    await prisma.user.deleteMany();
+
     const user = await prisma.user.create({
       data: {
         email: 'mitra-proximity@test.com',
@@ -20,6 +26,7 @@ describe('GET /products -- proximity search', () => {
         isVerified: true,
       },
     });
+    proximityUserId = user.id;
 
     await prisma.product.createMany({
       data: [
@@ -157,6 +164,95 @@ describe('GET /products -- proximity search', () => {
       expect(product).toHaveProperty('distanceKm');
       expect(typeof product.distanceKm).toBe('number');
       expect(product.distanceKm).toBeGreaterThan(0);
+    }
+  });
+
+  // ── Edge-case tests ──────────────────────────────────────────────
+
+  it('should return 400 for lat beyond -90/90 range', async () => {
+    const res = await request(app)
+      .get('/products')
+      .query({ lat: 100, lng: MONAS_LNG, radius: 5 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for lng beyond -180/180 range', async () => {
+    const res = await request(app)
+      .get('/products')
+      .query({ lat: MONAS_LAT, lng: 200, radius: 5 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for radius=0 (positive required)', async () => {
+    const res = await request(app)
+      .get('/products')
+      .query({ lat: MONAS_LAT, lng: MONAS_LNG, radius: 0 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for negative radius', async () => {
+    const res = await request(app)
+      .get('/products')
+      .query({ lat: MONAS_LAT, lng: MONAS_LNG, radius: -5 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for radius exceeding max (500)', async () => {
+    const res = await request(app)
+      .get('/products')
+      .query({ lat: MONAS_LAT, lng: MONAS_LNG, radius: 999 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should work without lat/lng returning all products in default sort', async () => {
+    const res = await request(app).get('/products');
+    expect(res.status).toBe(200);
+    expect(res.body.products.length).toBe(4);
+    // No distanceKm should be serialized when lat/lng not provided
+    for (const product of res.body.products) {
+      expect(product.distanceKm).toBeUndefined();
+    }
+  });
+
+  it('should return 400 for lat provided without lng', async () => {
+    const res = await request(app)
+      .get('/products')
+      .query({ lat: MONAS_LAT, radius: 5 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for lng provided without lat', async () => {
+    const res = await request(app)
+      .get('/products')
+      .query({ lng: MONAS_LNG, radius: 5 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return empty array when no products in radius', async () => {
+    // Very small radius at a remote location — nothing nearby
+    const res = await request(app)
+      .get('/products')
+      .query({ lat: 0, lng: 0, radius: 0.1 });
+    expect(res.status).toBe(200);
+    expect(res.body.products).toHaveLength(0);
+    expect(res.body.total).toBe(0);
+  });
+
+  it('should handle very large radius (up to 500km)', async () => {
+    const res = await request(app)
+      .get('/products')
+      .query({ lat: MONAS_LAT, lng: MONAS_LNG, radius: 500 });
+    expect(res.status).toBe(200);
+    expect(res.body.products.length).toBeGreaterThanOrEqual(3);
+    for (const product of res.body.products) {
+      expect(product).toHaveProperty('distanceKm');
     }
   });
 });

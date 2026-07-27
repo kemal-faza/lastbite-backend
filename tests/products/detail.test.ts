@@ -49,4 +49,64 @@ describe('GET /products/:id', () => {
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('PRODUCT_NOT_FOUND');
   });
+
+  // ── Edge-case tests ──────────────────────────────────────────────
+
+  it('should return 404 for malformed UUID (all zeros)', async () => {
+    const res = await request(app).get('/products/00000000-0000-0000-0000-000000000000');
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('PRODUCT_NOT_FOUND');
+  });
+
+  it('should return 404 for non-existent valid UUID', async () => {
+    const res = await request(app).get('/products/123e4567-e89b-12d3-a456-426614174000');
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('PRODUCT_NOT_FOUND');
+  });
+
+  it('should return detail for inactive/soft-deleted product', async () => {
+    // Soft-delete the product first
+    await prisma.product.update({
+      where: { id: productId },
+      data: { isActive: false },
+    });
+
+    const res = await request(app).get(`/products/${productId}`);
+    // findById does NOT filter by isActive, so it should still return the product
+    expect(res.status).toBe(200);
+    expect(res.body.product.id).toBe(productId);
+  });
+
+  it('should return consistent error shape for not found', async () => {
+    const res = await request(app).get('/products/123e4567-e89b-12d3-a456-426614174000');
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('error');
+    expect(res.body).toHaveProperty('code');
+    expect(res.body.code).toBe('PRODUCT_NOT_FOUND');
+  });
+
+  it('should handle SQL injection in product id', async () => {
+    const res = await request(app).get("/products/' OR '1'='1");
+    // Should not leak data, just return 404
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('PRODUCT_NOT_FOUND');
+  });
+
+  it('should return valid product response shape', async () => {
+    const res = await request(app).get(`/products/${productId}`);
+    expect(res.status).toBe(200);
+    const product = res.body.product;
+    expect(product).toHaveProperty('id');
+    expect(product).toHaveProperty('name');
+    expect(product).toHaveProperty('category');
+    expect(product).toHaveProperty('originalPrice');
+    expect(product).toHaveProperty('discountedPrice');
+    expect(product).toHaveProperty('discountPercent');
+    expect(product).toHaveProperty('stock');
+    expect(product).toHaveProperty('storeName');
+    expect(product).toHaveProperty('expiresAt');
+    expect(product).toHaveProperty('isActive');
+    expect(product).toHaveProperty('createdAt');
+    expect(product).toHaveProperty('updatedAt');
+  });
 });

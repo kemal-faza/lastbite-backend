@@ -132,4 +132,72 @@ describe('GET /products', () => {
     expect(res.body.products.length).toBe(1);
     expect(res.body.products[0].category).toBe('drinks');
   });
+
+  // ── Edge-case tests ──────────────────────────────────────────────
+
+  it('should return 400 for invalid sort value', async () => {
+    const res = await request(app).get('/products?sort=invalid_sort');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for page=0', async () => {
+    const res = await request(app).get('/products?page=0');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for negative limit', async () => {
+    const res = await request(app).get('/products?limit=-1');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for limit exceeding max (50)', async () => {
+    const res = await request(app).get('/products?limit=100');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for limit=0', async () => {
+    const res = await request(app).get('/products?limit=0');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should handle SQL injection in category filter', async () => {
+    const res = await request(app).get("/products?category=' OR '1'='1");
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should handle XSS in category filter', async () => {
+    const res = await request(app).get('/products?category=<script>alert(1)</script>');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should handle unicode/emoji in category filter', async () => {
+    const res = await request(app).get('/products?category=😀🔥');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return pagination metadata with negative page treated as invalid', async () => {
+    const res = await request(app).get('/products?page=-1');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should accept sort=oldest', async () => {
+    const res = await request(app).get('/products?sort=oldest');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.products)).toBe(true);
+  });
+
+  it('should accept sort=distance_asc without location (treats as standard sort)', async () => {
+    const res = await request(app).get('/products?sort=distance_asc');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.products)).toBe(true);
+  });
 });

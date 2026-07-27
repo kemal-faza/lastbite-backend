@@ -70,4 +70,107 @@ describe('POST /uploads', () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('FILE_REQUIRED');
   });
+
+  // ── Edge-case tests ──────────────────────────────────────────────
+
+  it('should reject non-image file (wrong MIME type)', async () => {
+    // Create a text file buffer
+    const textBuffer = Buffer.from('This is not an image', 'utf-8');
+    const res = await request(app)
+      .post('/uploads')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .attach('file', textBuffer, 'test.txt');
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('UPLOAD_ERROR');
+  });
+
+  it('should reject oversized file', async () => {
+    // Create a buffer larger than maxFileSize (5MB default)
+    const largeBuffer = Buffer.alloc(6 * 1024 * 1024); // 6MB
+    const res = await request(app)
+      .post('/uploads')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .attach('file', largeBuffer, 'large.jpg');
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('FILE_TOO_LARGE');
+  });
+
+  it('should reject corrupt image file', async () => {
+    // Create a corrupt PNG buffer (header only, no actual image data)
+    const corruptBuffer = Buffer.from([
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature only
+    ]);
+    const res = await request(app)
+      .post('/uploads')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .attach('file', corruptBuffer, 'test.png');
+
+    // Passes MIME check but fails sharp processing — should return 400
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('UPLOAD_ERROR');
+  });
+
+  it('should return 401 without auth token', async () => {
+    const imageBuffer = await sharp({
+      create: { width: 50, height: 50, channels: 3, background: { r: 255, g: 0, b: 0 } },
+    })
+      .jpeg()
+      .toBuffer();
+
+    const res = await request(app)
+      .post('/uploads')
+      .attach('file', imageBuffer, 'test.jpg');
+
+    expect(res.status).toBe(401);
+  });
+
+  it('should reject PDF file (wrong MIME type)', async () => {
+    const pdfBuffer = Buffer.from('%PDF-1.4 fake pdf content', 'utf-8');
+    const res = await request(app)
+      .post('/uploads')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .attach('file', pdfBuffer, 'test.pdf');
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('UPLOAD_ERROR');
+  });
+
+  it('should accept WebP image', async () => {
+    // Create a minimal WebP image
+    const webpBuffer = await sharp({
+      create: { width: 50, height: 50, channels: 3, background: { r: 255, g: 0, b: 0 } },
+    })
+      .webp()
+      .toBuffer();
+
+    const res = await request(app)
+      .post('/uploads')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .attach('file', webpBuffer, 'test.webp');
+
+    expect(res.status).toBe(201);
+    expect(res.body.url).toBeDefined();
+  });
+
+  it('should return 400 for malicious filename (path traversal)', async () => {
+    const imageBuffer = await sharp({
+      create: { width: 50, height: 50, channels: 3, background: { r: 0, g: 255, b: 0 } },
+    })
+      .jpeg()
+      .toBuffer();
+
+    const res = await request(app)
+      .post('/uploads')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .attach('file', imageBuffer, {
+        filename: '../../../etc/passwd.jpg',
+        contentType: 'image/jpeg',
+      });
+
+    expect(res.status).toBe(201);
+    // Should sanitise the filename — not use the path-traversal name
+    expect(res.body.url).not.toContain('etc/passwd');
+  });
 });

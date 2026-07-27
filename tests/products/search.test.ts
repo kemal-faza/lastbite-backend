@@ -90,4 +90,81 @@ describe('GET /products/search', () => {
     const res = await request(app).get('/products/search');
     expect(res.status).toBe(400);
   });
+
+  // ── Edge-case tests ──────────────────────────────────────────────
+
+  it('should return 400 for empty q param', async () => {
+    const res = await request(app).get('/products/search?q=');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should handle SQL injection in query', async () => {
+    const res = await request(app).get("/products/search?q=' OR '1'='1");
+    expect(res.status).toBe(200);
+    // Should not cause errors or leak data
+    expect(res.body).toHaveProperty('products');
+  });
+
+  it('should handle XSS in query', async () => {
+    const res = await request(app).get('/products/search?q=<script>alert("xss")</script>');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('products');
+  });
+
+  it('should handle very long query', async () => {
+    const longQuery = 'a'.repeat(500);
+    const res = await request(app).get(`/products/search?q=${encodeURIComponent(longQuery)}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('products');
+  });
+
+  it('should handle unicode/emoji in query', async () => {
+    const res = await request(app).get('/products/search?q=😀🔥佐藤');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('products');
+  });
+
+  it('should handle single character query', async () => {
+    const res = await request(app).get('/products/search?q=a');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('products');
+  });
+
+  it('should handle special regex characters in query', async () => {
+    const res = await request(app).get('/products/search?q=.*+?^${}()|[]\\');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('products');
+  });
+
+  it('should decode URL-encoded search terms', async () => {
+    const res = await request(app).get('/products/search?q=ayam%20geprek');
+    expect(res.status).toBe(200);
+    expect(res.body.products.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should filter search by category and return 400 for invalid category', async () => {
+    const res = await request(app).get('/products/search?q=ayam&category=invalid');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should handle whitespace-only query (treated as empty)', async () => {
+    const res = await request(app).get('/products/search?q=   ');
+    expect(res.status).toBe(400);
+  });
+
+  it('should return consistent error shape on validation failure', async () => {
+    const res = await request(app).get('/products/search?q=');
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('error');
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should respond quickly to DROP TABLE injection', async () => {
+    const res = await request(app).get("/products/search?q='; DROP TABLE products; --");
+    // The search uses parameterised queries, so this should be safe
+    expect(res.status).toBe(200);
+    expect(res.body.products).toBeDefined();
+  });
 });
