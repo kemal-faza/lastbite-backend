@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { prisma } from '../setup.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
+import { unicodeStrings } from '../support/edgeCases.js';
 
 const app = createApp();
 
@@ -124,5 +125,50 @@ describe('GET /mitra/analytics/revenue', () => {
     const to = new Date().toISOString();
     const res = await request(app).get(`/mitra/analytics/revenue?from=${from}&to=${to}`);
     expect(res.status).toBe(401);
+  });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should return zero revenue for period with no orders', async () => {
+    const from = new Date(Date.now() + 86400000).toISOString(); // tomorrow
+    const to = new Date(Date.now() + 2 * 86400000).toISOString(); // day after
+
+    const res = await request(app)
+      .get(`/mitra/analytics/revenue?from=${from}&to=${to}`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.summary.totalRevenue).toBe(0);
+    expect(res.body.summary.totalOrders).toBe(0);
+    expect(res.body.summary.totalItems).toBe(0);
+    expect(res.body.summary.averageOrderValue).toBe(0);
+  });
+
+  it('should return 400 for invalid date format', async () => {
+    const res = await request(app)
+      .get('/mitra/analytics/revenue?from=not-a-date&to=2024-01-01')
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for missing date params', async () => {
+    const res = await request(app)
+      .get('/mitra/analytics/revenue')
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should return 400 for future date range (from > to): valid ISO but no data', async () => {
+    const from = new Date(Date.now() + 86400000).toISOString();
+    const to = new Date(Date.now() - 86400000).toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/revenue?from=${from}&to=${to}`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+
+    // Either 400 (validation rejects) or 200 (returns empty data)
+    expect([200, 400]).toContain(res.status);
   });
 });

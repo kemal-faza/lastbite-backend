@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import sharp from 'sharp';
 import { generateVariants } from '../../src/services/uploadService.js';
 
@@ -78,5 +78,60 @@ describe('generateVariants', () => {
 
     expect(meta.format).toBe('jpeg');
     expect(meta.size).toBeLessThan(input.length);
+  });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should handle non-image buffer gracefully', async () => {
+    // A 10-byte buffer that is not a valid image
+    const nonImage = Buffer.from('not-an-image');
+    await expect(generateVariants(nonImage)).rejects.toThrow();
+  });
+
+  it('should handle empty buffer', async () => {
+    const empty = Buffer.alloc(0);
+    await expect(generateVariants(empty)).rejects.toThrow();
+  });
+
+  it('should handle extremely large buffer without crashing', async () => {
+    // Create a very large image (4000x4000)
+    const largeImage = await sharp({
+      create: { width: 4000, height: 4000, channels: 3, background: { r: 100, g: 100, b: 100 } },
+    })
+      .jpeg()
+      .toBuffer();
+
+    const result = await generateVariants(largeImage);
+    expect(result).toHaveProperty('thumb');
+    expect(result).toHaveProperty('card');
+    expect(result).toHaveProperty('full');
+
+    const thumbMeta = await sharp(result.thumb).metadata();
+    expect(thumbMeta.width).toBe(200); // downsized
+  });
+
+  it('should handle PNG input (convert to JPEG)', async () => {
+    const pngImage = await sharp({
+      create: { width: 500, height: 500, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } },
+    })
+      .png()
+      .toBuffer();
+
+    const result = await generateVariants(pngImage);
+    const meta = await sharp(result.thumb).metadata();
+    expect(meta.format).toBe('jpeg');
+  });
+
+  it('should handle 1x1 pixel image', async () => {
+    const tinyImage = await sharp({
+      create: { width: 1, height: 1, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .jpeg()
+      .toBuffer();
+
+    const result = await generateVariants(tinyImage);
+    const thumbMeta = await sharp(result.thumb).metadata();
+    // withoutEnlargement: true → width should remain 1
+    expect(thumbMeta.width).toBe(1);
   });
 });

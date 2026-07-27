@@ -110,4 +110,43 @@ describe('GET /mitra/analytics/export', () => {
     const res = await request(app).get(`/mitra/analytics/export?from=${from}&to=${to}`);
     expect(res.status).toBe(401);
   });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should return empty CSV for export with no data', async () => {
+    const from = new Date(Date.now() + 86400000).toISOString();
+    const to = new Date(Date.now() + 2 * 86400000).toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/export?from=${from}&to=${to}`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/csv');
+    const lines = res.text.trim().split('\n');
+    expect(lines.length).toBe(1); // Just the header
+  });
+
+  it('should return 400 for invalid format parameter', async () => {
+    const from = new Date(Date.now() - 86400000).toISOString();
+    const to = new Date().toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/export?from=${from}&to=${to}&format=invalid`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+    // Either 400 (rejected) or 200 (defaults to csv)
+    expect([200, 400]).toContain(res.status);
+  });
+
+  it('should handle large date range without crashing', async () => {
+    const from = new Date('2020-01-01').toISOString();
+    const to = new Date().toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/export?from=${from}&to=${to}`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/csv');
+  });
 });

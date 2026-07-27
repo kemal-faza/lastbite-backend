@@ -22,7 +22,7 @@ export async function createAdminUser(email = 'admin@test.com'): Promise<TestAdm
   return {
     userId: admin.id,
     email: admin.email,
-    accessToken: signAccessToken({ userId: admin.id, email: admin.email }),
+    accessToken: signAccessToken({ userId: admin.id, email: admin.email, role: 'ADMIN' }),
   };
 }
 

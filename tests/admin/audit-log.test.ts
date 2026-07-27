@@ -53,4 +53,63 @@ describe('AuditLogService', () => {
     expect(result.total).toBe(1);
     expect(result.logs[0].entity).toBe('product');
   });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should return empty list when no audit logs exist', async () => {
+    // DB is wiped in beforeEach, so no logs should exist
+    const result = await listAuditLogs({ limit: 10 });
+    expect(result.total).toBe(0);
+    expect(result.logs).toHaveLength(0);
+  });
+
+  it('should handle pagination with page=1 limit=1', async () => {
+    await createAuditLog({ actorId: adminId, action: 'user.view', entity: 'user' });
+    await createAuditLog({ actorId: adminId, action: 'user.edit', entity: 'user' });
+
+    const result = await listAuditLogs({ page: 1, limit: 1 });
+    expect(result.total).toBe(2);
+    expect(result.logs).toHaveLength(1);
+    expect(result.page).toBe(1);
+    expect(result.limit).toBe(1);
+  });
+
+  it('should handle entityId being undefined gracefully', async () => {
+    const log = await createAuditLog({
+      actorId: adminId,
+      action: 'user.view',
+      entity: 'user',
+      // entityId intentionally omitted
+    });
+
+    expect(log.id).toBeDefined();
+    expect(log.entityId).toBeNull();
+  });
+
+  it('should handle empty details', async () => {
+    const log = await createAuditLog({
+      actorId: adminId,
+      action: 'user.view',
+      entity: 'user',
+      entityId: 'u1',
+      details: {},
+    });
+
+    expect(log.id).toBeDefined();
+    expect(log.details).toEqual({});
+  });
+
+  it('should create audit log with minimal fields', async () => {
+    const log = await createAuditLog({
+      actorId: adminId,
+      action: 'test.action',
+      entity: 'test',
+    });
+
+    expect(log.id).toBeDefined();
+    expect(log.action).toBe('test.action');
+    expect(log.entity).toBe('test');
+    expect(log.entityId).toBeNull();
+    expect(log.details).toBeNull();
+  });
 });

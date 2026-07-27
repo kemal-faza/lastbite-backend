@@ -87,4 +87,35 @@ describe('POST /uploads - variant generation integration', () => {
     expect(getRes.status).toBe(200);
     expect(getRes.headers['content-type']).toMatch(/image\/jpeg/);
   });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should reject upload without a file', { skip: !isLocalProvider }, async () => {
+    const res = await request(app)
+      .post('/uploads')
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('should reject non-JSON/non-image file upload', { skip: !isLocalProvider }, async () => {
+    const textBuffer = Buffer.from('this is not an image', 'utf-8');
+    const res = await request(app)
+      .post('/uploads')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .attach('file', textBuffer, 'test.txt');
+    expect(res.status).toBe(400);
+  });
+
+  it('should reject upload without authentication', { skip: !isLocalProvider }, async () => {
+    const imageBuffer = await sharp({
+      create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .jpeg()
+      .toBuffer();
+
+    const res = await request(app)
+      .post('/uploads')
+      .attach('file', imageBuffer, 'test.jpg');
+    expect(res.status).toBe(401);
+  });
 });

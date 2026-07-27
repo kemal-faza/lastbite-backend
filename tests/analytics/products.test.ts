@@ -141,4 +141,92 @@ describe('GET /mitra/analytics/products', () => {
     const res = await request(app).get(`/mitra/analytics/products?from=${from}&to=${to}`);
     expect(res.status).toBe(401);
   });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should return empty products list for mitra with no products', async () => {
+    const emptyMitra = await prisma.user.create({
+      data: {
+        email: 'no-prod@example.com',
+        name: 'No Products',
+        passwordHash: 'hash',
+        role: 'MITRA',
+        isVerified: true,
+        mitraProfile: {
+          create: { storeName: 'Toko Kosong', verificationStatus: 'VERIFIED' },
+        },
+      },
+    });
+    const emptyToken = signAccessToken({ userId: emptyMitra.id, email: emptyMitra.email });
+    const from = new Date(Date.now() - 86400000).toISOString();
+    const to = new Date().toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/products?from=${from}&to=${to}`)
+      .set('Authorization', `Bearer ${emptyToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.products).toEqual([]);
+  });
+
+  it('should include deactivated products in stats', async () => {
+    const product = await prisma.product.create({
+      data: {
+        name: 'Deactivated Product',
+        category: 'meals',
+        originalPrice: 20000,
+        discountedPrice: 10000,
+        stock: 5,
+        storeName: 'Toko Produk',
+        expiresAt: new Date(Date.now() + 86400000),
+        mitraId: mitraUserId,
+        isActive: false,
+      },
+    });
+
+    const buyer = await prisma.user.create({
+      data: {
+        email: 'deact-buyer@example.com',
+        name: 'Deact Buyer',
+        passwordHash: 'hash',
+        role: 'FOOD_SAVER',
+        isVerified: true,
+      },
+    });
+
+    await prisma.order.create({
+      data: {
+        userId: buyer.id,
+        storeName: 'Toko Produk',
+        status: 'PICKED_UP',
+        pickupCode: 'DEACT-0001',
+        pickupExpiresAt: new Date(Date.now() + 7200000),
+        totalAmount: 10000,
+        savingAmount: 10000,
+        buyerName: 'Buyer',
+        buyerPhone: '08000000',
+        createdAt: new Date(),
+        items: {
+          create: {
+            productId: product.id,
+            name: 'Deactivated Product',
+            storeName: 'Toko Produk',
+            price: 10000,
+            originalPrice: 20000,
+            quantity: 2,
+          },
+        },
+      },
+    });
+
+    const from = new Date(Date.now() - 86400000).toISOString();
+    const to = new Date().toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/products?from=${from}&to=${to}`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+    expect(res.status).toBe(200);
+    const deactivated = res.body.products.find((p: { productId: string }) => p.productId === product.id);
+    expect(deactivated).toBeDefined();
+    expect(deactivated.totalSold).toBe(2);
+  });
 });

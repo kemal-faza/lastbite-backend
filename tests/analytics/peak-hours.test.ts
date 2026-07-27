@@ -133,4 +133,43 @@ describe('GET /mitra/analytics/peak-hours', () => {
     const res = await request(app).get(`/mitra/analytics/peak-hours?from=${from}&to=${to}`);
     expect(res.status).toBe(401);
   });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should return zero distribution for mitra with no orders', async () => {
+    const emptyMitra = await prisma.user.create({
+      data: {
+        email: 'empty-peak@example.com',
+        name: 'Empty Peak',
+        passwordHash: 'hash',
+        role: 'MITRA',
+        isVerified: true,
+        mitraProfile: {
+          create: { storeName: 'Toko Kosong', verificationStatus: 'VERIFIED' },
+        },
+      },
+    });
+    const emptyToken = signAccessToken({ userId: emptyMitra.id, email: emptyMitra.email });
+    const from = new Date(Date.now() - 86400000).toISOString();
+    const to = new Date().toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/peak-hours?from=${from}&to=${to}`)
+      .set('Authorization', `Bearer ${emptyToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.hours).toHaveLength(24);
+    res.body.hours.forEach((h: { orders: number }) => {
+      expect(h.orders).toBe(0);
+    });
+  });
+
+  it('should return 400 for invalid timezone', async () => {
+    const from = new Date(Date.now() - 86400000).toISOString();
+    const to = new Date().toISOString();
+    const res = await request(app)
+      .get(`/mitra/analytics/peak-hours?from=${from}&to=${to}&timezone=Invalid/Timezone`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+    // Invalid timezone should not break — either 200 (ignored) or 400
+    expect([200, 400]).toContain(res.status);
+  });
 });

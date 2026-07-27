@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { prisma } from '../setup.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
+import { badUuids } from '../support/edgeCases.js';
 
 const app = createApp();
 
@@ -109,5 +110,86 @@ describe('Stock alert push notifications', () => {
       where: { productId },
     });
     expect(subs.length).toBe(0); // One-time alert per replenishment
+  });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should return 400 for product update with bad UUID', async () => {
+    const res = await request(app)
+      .patch('/mitra/products/not-a-uuid')
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({ stock: 5 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should NOT notify when stock goes from 0 to 0 (still out of stock)', async () => {
+    // Product is already stock 0
+    await request(app)
+      .patch(`/mitra/products/${productId}`)
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({ stock: 0 });
+
+    const notifs = await prisma.notification.findMany({
+      where: { userId: foodSaverId, type: 'stock_alert' },
+    });
+    expect(notifs.length).toBe(0);
+  });
+
+  it('should NOT notify when stock goes to negative (invalid)', async () => {
+    const res = await request(app)
+      .patch(`/mitra/products/${productId}`)
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({ stock: -1 });
+    expect(res.status).toBe(400);
+  });
+
+  it('should suppress duplicate alert if stock goes 0→5→0→5 within timeframe', async () => {
+    // 0 → 5: should notify
+    await request(app)
+      .patch(`/mitra/products/${productId}`)
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({ stock: 5 });
+
+    // Subscription is deleted after first notify
+    let subs = await prisma.wishlistSubscription.findMany({ where: { productId } });
+    expect(subs.length).toBe(0);
+
+    // Re-subscribe and set stock to 0 again, then back to 5
+    await prisma.wishlistSubscription.create({
+      data: { userId: foodSaverId, productId },
+    });
+    await prisma.product.update({ where: { id: productId }, data: { stock: 0 } });
+
+    await request(app)
+      .patch(`/mitra/products/${productId}`)
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({ stock: 5 });
+
+    const notifs = await prisma.notification.findMany({
+      where: { userId: foodSaverId, type: 'stock_alert' },
+    });
+    expect(notifs.length).toBe(2); // second alert is also sent
+  });
+
+  it('should not alert for a product the user is not subscribed to', async () => {
+    const unsubscribedUser = await prisma.user.create({
+      data: {
+        email: `unsub-${Date.now()}@test.com`,
+        name: 'Unsubscribed',
+        passwordHash: 'hash',
+        isVerified: true,
+      },
+    });
+
+    await request(app)
+      .patch(`/mitra/products/${productId}`)
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({ stock: 5 });
+
+    const notifs = await prisma.notification.findMany({
+      where: { userId: unsubscribedUser.id, type: 'stock_alert' },
+    });
+    expect(notifs.length).toBe(0);
   });
 });

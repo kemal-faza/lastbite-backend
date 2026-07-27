@@ -199,4 +199,51 @@ describe('GET /mitra/analytics/sales', () => {
     expect(res.status).toBe(200);
     expect(res.body.trend).toEqual([]);
   });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should handle single-day range correctly', async () => {
+    const now = new Date();
+    const from = now.toISOString();
+    const to = now.toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/sales?from=${from}&to=${to}`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.trend).toBeDefined();
+  });
+
+  it('should return empty dataset for future date range', async () => {
+    const from = new Date(Date.now() + 86400000).toISOString();
+    const to = new Date(Date.now() + 2 * 86400000).toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/sales?from=${from}&to=${to}`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.trend).toEqual([]);
+  });
+
+  it('should accept weekly granularity', async () => {
+    const from = new Date(Date.now() - 30 * 86400000).toISOString();
+    const to = new Date().toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/sales?from=${from}&to=${to}&granularity=weekly`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.trend).toBeDefined();
+  });
+
+  it('should accept monthly granularity', async () => {
+    const from = new Date(Date.now() - 90 * 86400000).toISOString();
+    const to = new Date().toISOString();
+
+    const res = await request(app)
+      .get(`/mitra/analytics/sales?from=${from}&to=${to}&granularity=monthly`)
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.trend).toBeDefined();
+  });
 });

@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { prisma } from '../setup.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
+import { invalidLats, invalidLngs, longString } from '../support/edgeCases.js';
 
 vi.mock('../../src/services/geocodingService.js', () => ({
   geocodeAddress: vi.fn().mockResolvedValue({ lat: -6.2088, lng: 106.8456, formattedAddress: 'Jl. Sudirman, Jakarta' }),
@@ -91,5 +92,72 @@ describe('PATCH /mitra/me/location', () => {
       .patch('/mitra/me/location')
       .send({ lat: -6.2088, lng: 106.8456 });
     expect(res.status).toBe(401);
+  });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should reject lat out of range (-91)', async () => {
+    const res = await request(app)
+      .patch('/mitra/me/location')
+      .set('Authorization', `Bearer ${mitraAccessToken}`)
+      .send({ lat: -91, lng: 106.8456 });
+    expect(res.status).toBe(400);
+  });
+
+  it('should reject lat out of range (91)', async () => {
+    const res = await request(app)
+      .patch('/mitra/me/location')
+      .set('Authorization', `Bearer ${mitraAccessToken}`)
+      .send({ lat: 91, lng: 106.8456 });
+    expect(res.status).toBe(400);
+  });
+
+  it('should reject lng out of range (-181)', async () => {
+    const res = await request(app)
+      .patch('/mitra/me/location')
+      .set('Authorization', `Bearer ${mitraAccessToken}`)
+      .send({ lat: -6.2, lng: -181 });
+    expect(res.status).toBe(400);
+  });
+
+  it('should reject lng out of range (181)', async () => {
+    const res = await request(app)
+      .patch('/mitra/me/location')
+      .set('Authorization', `Bearer ${mitraAccessToken}`)
+      .send({ lat: -6.2, lng: 181 });
+    expect(res.status).toBe(400);
+  });
+
+  it('should reject boundary invalid lats from shared fixtures', async () => {
+    for (const lat of invalidLats) {
+      if (typeof lat !== 'number' || isNaN(lat)) {
+        // NaN/Infinity are not valid JSON numbers in JSON.stringify
+        continue;
+      }
+      const res = await request(app)
+        .patch('/mitra/me/location')
+        .set('Authorization', `Bearer ${mitraAccessToken}`)
+        .send({ lat, lng: 106.8456 });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it('should reject boundary invalid lngs from shared fixtures', async () => {
+    for (const lng of invalidLngs) {
+      if (typeof lng !== 'number' || isNaN(lng)) continue;
+      const res = await request(app)
+        .patch('/mitra/me/location')
+        .set('Authorization', `Bearer ${mitraAccessToken}`)
+        .send({ lat: -6.2, lng });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it('should reject lat/lng with wrong type (string)', async () => {
+    const res = await request(app)
+      .patch('/mitra/me/location')
+      .set('Authorization', `Bearer ${mitraAccessToken}`)
+      .send({ lat: 'not-a-number', lng: 106.8456 });
+    expect(res.status).toBe(400);
   });
 });

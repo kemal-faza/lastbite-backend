@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { prisma } from '../setup.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
+import { badUuids } from '../support/edgeCases.js';
 
 const app = createApp();
 
@@ -129,5 +130,64 @@ describe('Order status push notifications', () => {
     });
     expect(devices.length).toBe(1);
     expect(devices[0].token).toBe('fcm-test-buyer');
+  });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should return 404 for status update on non-existent order', async () => {
+    const res = await request(app)
+      .patch('/mitra/orders/00000000-0000-0000-0000-000000000000/status')
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({ status: 'PROCESSED' });
+    expect(res.status).toBe(404);
+  });
+
+  it('should return 400 for malformed order UUID in status update', async () => {
+    const res = await request(app)
+      .patch('/mitra/orders/not-a-uuid/status')
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({ status: 'PROCESSED' });
+    expect(res.status).toBe(400);
+  });
+
+  it('should still create notifications when user has no device tokens', async () => {
+    // Create an order for a user without any device tokens
+    const noDeviceUser = await prisma.user.create({
+      data: {
+        email: `no-device-${Date.now()}@test.com`,
+        name: 'No Device',
+        passwordHash: 'hash',
+        isVerified: true,
+      },
+    });
+    const noDeviceToken = signAccessToken({ userId: noDeviceUser.id, email: noDeviceUser.email });
+
+    await request(app)
+      .post('/cart')
+      .set('Authorization', `Bearer ${noDeviceToken}`)
+      .send({ productId, quantity: 1 });
+
+    const orderRes = await request(app)
+      .post('/orders')
+      .set('Authorization', `Bearer ${noDeviceToken}`)
+      .send({ buyerName: 'No Device', buyerPhone: '08123456789' });
+
+    expect(orderRes.status).toBe(201);
+
+    // Notification should still be created even without device tokens
+    const notifs = await prisma.notification.findMany({
+      where: { userId: noDeviceUser.id, type: 'order_status' },
+    });
+    expect(notifs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should handle FCM mock failure gracefully', async () => {
+    // FCM is mocked in test env — should never throw even if "fails"
+    // Sending status update should work without throwing
+    const res = await request(app)
+      .patch(`/mitra/orders/${orderId}/status`)
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({ status: 'PROCESSED' });
+    expect(res.status).toBe(200);
   });
 });

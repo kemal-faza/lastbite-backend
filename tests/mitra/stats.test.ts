@@ -148,4 +148,60 @@ describe('GET /mitra/stats', () => {
     const res = await request(app).get('/mitra/stats');
     expect(res.status).toBe(401);
   });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should return zero stats for mitra with no products', async () => {
+    const emptyMitra = await prisma.user.create({
+      data: {
+        email: 'empty-stats@example.com',
+        name: 'Empty Mitra',
+        passwordHash: 'hash',
+        role: 'MITRA',
+        isVerified: true,
+        mitraProfile: {
+          create: { storeName: 'Toko Kosong', verificationStatus: 'VERIFIED' },
+        },
+      },
+    });
+    const emptyToken = signAccessToken({ userId: emptyMitra.id, email: emptyMitra.email });
+
+    const res = await request(app)
+      .get('/mitra/stats')
+      .set('Authorization', `Bearer ${emptyToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.stats.totalStock).toBe(0);
+    expect(res.body.stats.productCount).toBe(0);
+    expect(res.body.stats.totalSold).toBe(0);
+    expect(res.body.stats.remaining).toBe(0);
+    expect(res.body.stats.activeOrders).toBe(0);
+  });
+
+  it('should handle deactivated products correctly', async () => {
+    // Deactivate the product
+    await prisma.product.update({ where: { id: productId }, data: { isActive: false } });
+
+    const res = await request(app)
+      .get('/mitra/stats')
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+
+    expect(res.status).toBe(200);
+    // Stats service counts all products regardless of isActive
+    expect(res.body.stats.productCount).toBe(1);
+    expect(res.body.stats.totalStock).toBe(10);
+  });
+
+  it('should handle negative stock gracefully (should never happen, but defensive)', async () => {
+    await prisma.product.update({ where: { id: productId }, data: { stock: -5 } });
+
+    const res = await request(app)
+      .get('/mitra/stats')
+      .set('Authorization', `Bearer ${mitraAccessToken}`);
+
+    expect(res.status).toBe(200);
+    // totalStock = -5 but the service uses Math.max(0, totalStock)
+    expect(res.body.stats.totalStock).toBe(0);
+    expect(res.body.stats.remaining).toBe(0);
+  });
 });

@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { prisma } from '../setup.js';
-import { createAdminUser } from './setup.js';
+import { createAdminUser, createFoodSaverUser } from './setup.js';
+import { signAccessToken } from '../../src/lib/jwt.js';
+import { badUuids } from '../support/edgeCases.js';
 import bcrypt from 'bcryptjs';
 
 const app = createApp();
@@ -62,5 +64,49 @@ describe('Admin User Management', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.name).toBe('Nama Baru');
+  });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should reject FOOD_SAVER trying to access admin users', async () => {
+    const fsUser = await createFoodSaverUser();
+    const fsToken = signAccessToken({ userId: fsUser.id, email: fsUser.email });
+
+    const res = await request(app)
+      .get('/admin/users')
+      .set('Authorization', `Bearer ${fsToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('should return 404 for non-existent user detail', async () => {
+    const res = await request(app)
+      .get('/admin/users/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('should return 400 for malformed UUID in user detail', async () => {
+    const res = await request(app)
+      .get('/admin/users/not-a-uuid')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('should handle pagination parameters', async () => {
+    const res = await request(app)
+      .get('/admin/users?page=1&limit=2')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.users.length).toBeLessThanOrEqual(2);
+    expect(res.body.page).toBe(1);
+    expect(res.body.limit).toBe(2);
+  });
+
+  it('should reject deleting non-existent user', async () => {
+    const res = await request(app)
+      .delete('/admin/users/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(404);
   });
 });

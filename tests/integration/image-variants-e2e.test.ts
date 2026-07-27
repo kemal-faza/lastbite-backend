@@ -109,4 +109,54 @@ describe('Image variants E2E flow', () => {
     expect(listRes.body.products[0].imageVariants).toBeDefined();
     expect(listRes.body.products[0].imageVariants.thumb).toMatch(/\/products\/.+\/thumb\.jpg$/);
   });
+
+  // ── Edge cases ──────────────────────────────────────────────────
+
+  it('should create product without imageUrl (no variants)', async () => {
+    const productRes = await request(app)
+      .post('/products')
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({
+        name: 'No Image Product',
+        category: 'meals',
+        originalPrice: 15000,
+        discountedPrice: 7500,
+        stock: 3,
+        storeName: 'Toko Tanpa Gambar',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      });
+
+    expect(productRes.status).toBe(201);
+    const productId = productRes.body.product.id;
+
+    const getRes = await request(app).get(`/products/${productId}`);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.product.imageUrl).toBeNull();
+    expect(getRes.body.product.imageVariants).toBeNull();
+  });
+
+  it('should handle product creation with invalid imageUrl gracefully', async () => {
+    const productRes = await request(app)
+      .post('/products')
+      .set('Authorization', `Bearer ${mitraToken}`)
+      .send({
+        name: 'Invalid Image Product',
+        category: 'bakery',
+        originalPrice: 20000,
+        discountedPrice: 10000,
+        stock: 5,
+        imageUrl: '/uploads/nonexistent/image.jpg',
+        storeName: 'Toko Error',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      });
+
+    expect(productRes.status).toBe(201);
+    const productId = productRes.body.product.id;
+
+    const getRes = await request(app).get(`/products/${productId}`);
+    expect(getRes.status).toBe(200);
+    // Invalid image URL still gets stored and variants derived
+    expect(getRes.body.product.imageUrl).toBe('/uploads/nonexistent/image.jpg');
+    expect(getRes.body.product.imageVariants).toBeDefined();
+  });
 });
